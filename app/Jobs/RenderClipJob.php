@@ -1,0 +1,169 @@
+<?php
+
+namespace App\Jobs;
+
+use App\Models\GeneratedClip;
+use App\Services\FFmpegService;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Throwable;
+
+class RenderClipJob implements ShouldQueue
+{
+    use Queueable;
+
+    public int $tries   = 2;
+    public int $timeout = 600;
+
+    public function __construct(public string $clipId) {}
+
+    public function handle(FFmpegService $ffmpeg): void
+    {
+        $log  = Log::channel('clipper_jobs');
+        $clip = GeneratedClip::with(['clipProject.subtitleSetting', 'clipProject.hookSetting', 'clipProject.transcript'])->findOrFail($this->clipId);
+        $project = $clip->clipProject;
+
+        $clip->update(['status' => 'processing']);
+
+        $log->info('RenderClipJob started', [
+            'clip_id'    => $this->clipId,
+            'project_id' => $project->id,
+            'layout'     => $project->layout_type,
+            'start'      => $clip->start_seconds,
+            'end'        => $clip->end_seconds,
+        ]);
+
+        $tempDir  = storage_path('app/temp/' . $project->id);
+        $srcVideo = $tempDir . '/video.mp4';
+
+        if (!file_exists($srcVideo)) {
+            throw new \RuntimeException("Source video not found: {$srcVideo}");
+        }
+
+        $step1 = $tempDir . '/cut_' . $this->clipId . '.mp4';
+        $step2 = $tempDir . '/layout_' . $this->clipId . '.mp4';
+
+        // 1. Cut
+        $log->info('Cutting video', ['start' => $clip->start_seconds, 'end' => $clip->end_seconds]);
+        $ffmpeg->cut($srcVideo, $clip->start_seconds, $clip->end_seconds, $step1);
+
+        // 2. Apply layout
+        $log->info('Applying layout', ['layout' => $project->layout_type]);
+        $ffmpeg->applyLayout($step1, $project->layout_type, $step2);
+
+        $current = $step2;
+
+        // 3. Resolve hook first — its duration drives subtitle suppression
+        $hook         = $project->hookSetting;
+        $hookText     = null;
+        $hookDuration = 0.0;
+        $hookSettings = [];
+        if ($hook && $hook->enabled) {
+            $text = $hook->is_ai_generated ? ($clip->hook_text ?? $hook->hook_text) : $hook->hook_text;
+            if ($text) {
+                $hookText     = $text;
+                $hookDuration = (float) $hook->duration_seconds;
+                $hookSettings = [
+                    'text_color'       => $hook->text_color,
+                    'background_style' => $hook->background_style,
+                    'position'         => $hook->position,
+                    // Use subtitle font family for consistency; hook has no own font setting yet
+                    'font_family'      => $project->subtitleSetting?->font_family ?? 'Montserrat',
+                    'font_size'        => 60,
+                ];
+            }
+        }
+
+        // 4. Build subtitle ASS using real transcript timestamps (Fix 4)
+        $assPath  = null;
+        $subtitle = $project->subtitleSetting;
+        if ($subtitle && $subtitle->enabled) {
+            // Use DB transcript segments (real YouTube caption timestamps) instead of
+            // Gemini-generated subtitle_json (AI approximation — causes timing drift).
+            $transcript   = $project->transcript;
+            $rawSegments  = $transcript?->content ?? $clip->subtitle_json ?? [];
+
+            // Filter to segments overlapping this clip's time window
+            $clipSegments = array_values(array_filter($rawSegments, fn($s) =>
+                ($s['end']   ?? 0) > $clip->start_seconds &&
+                ($s['start'] ?? 0) < $clip->end_seconds
+            ));
+
+            if (!empty($clipSegments)) {
+                $log->info('Building subtitles', [
+                    'font'     => $subtitle->font_family,
+                    'position' => $subtitle->position,
+                    'source'   => $transcript ? 'transcript' : 'subtitle_json',
+                    'segments' => count($clipSegments),
+                ]);
+                $assPath    = $tempDir . '/sub_' . $this->clipId . '.ass';
+                $assContent = $ffmpeg->buildAssFile($clipSegments, [
+                    'font_family'      => $subtitle->font_family,
+                    'font_size'        => $subtitle->font_size,
+                    'text_color'       => $subtitle->text_color,
+                    'highlight_color'  => $subtitle->highlight_color,
+                    'position'         => $subtitle->position,
+                    'background_style' => $subtitle->background_style,
+                ], (float) $clip->start_seconds, $hookDuration);
+                file_put_contents($assPath, $assContent);
+            } else {
+                $log->debug('Subtitles skipped — no segments in clip range', [
+                    'enabled'  => $subtitle->enabled,
+                    'has_json' => !empty($clip->subtitle_json),
+                ]);
+            }
+        } else {
+            $log->debug('Subtitles skipped', ['enabled' => $subtitle?->enabled]);
+        }
+
+        // 5. Single pass: burn subtitles + overlay hook (layer 2), audio preserved
+        if ($assPath || $hookText) {
+            $log->info('Burning overlay', ['hook' => $hookText, 'hook_dur' => $hookDuration, 'subs' => (bool) $assPath]);
+            $final = $tempDir . '/final_' . $this->clipId . '.mp4';
+            $ffmpeg->burnSubtitlesAndHook($current, $assPath, $hookText, $hookDuration, $hookSettings, $final);
+            $current = $final;
+        }
+
+        // 5. Move to output
+        $outDir  = 'clips/' . $project->user_id . '/' . $project->id;
+        Storage::makeDirectory($outDir);
+        $outPath = $outDir . '/' . $this->clipId . '.mp4';
+        Storage::put($outPath, file_get_contents($current));
+
+        $this->cleanupTemp($tempDir, $this->clipId);
+
+        $clip->update(['output_path' => $outPath, 'status' => 'done']);
+
+        $log->info('RenderClipJob done', [
+            'clip_id'    => $this->clipId,
+            'output'     => $outPath,
+            'size_mb'    => round(Storage::size($outPath) / 1048576, 2),
+        ]);
+    }
+
+    public function failed(Throwable $e): void
+    {
+        Log::channel('clipper_jobs')->error('RenderClipJob failed', [
+            'clip_id' => $this->clipId,
+            'error'   => $e->getMessage(),
+            'trace'   => $e->getTraceAsString(),
+        ]);
+
+        GeneratedClip::where('id', $this->clipId)->update([
+            'status'    => 'failed',
+            'error_msg' => $e->getMessage(),
+        ]);
+    }
+
+    private function cleanupTemp(string $dir, string $clipId): void
+    {
+        foreach (['cut_', 'layout_', 'subtitled_', 'hook_', 'final_', 'sub_'] as $prefix) {
+            foreach (['.mp4', '.ass'] as $ext) {
+                $f = $dir . '/' . $prefix . $clipId . $ext;
+                if (file_exists($f)) @unlink($f);
+            }
+        }
+    }
+}

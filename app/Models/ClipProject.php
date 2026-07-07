@@ -1,0 +1,75 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Str;
+
+class ClipProject extends Model
+{
+    public $incrementing = false;
+    protected $keyType = 'string';
+
+    protected $fillable = [
+        'id',
+        'user_id',
+        'youtube_url',
+        'video_title',
+        'duration_seconds',
+        'thumbnail_url',
+        'layout_type',
+        'clip_count',
+        'duration_mode',
+        'min_duration',
+        'max_duration',
+        'status',
+        'progress_stage',
+        'progress_message',
+        'error_msg',
+    ];
+
+    protected $casts = [
+        'clip_count'       => 'integer',
+        'duration_seconds' => 'integer',
+        'min_duration'     => 'integer',
+        'max_duration'     => 'integer',
+    ];
+
+    protected static function boot(): void
+    {
+        parent::boot();
+        static::creating(function ($model) {
+            if (!$model->id) {
+                $model->id = (string) Str::uuid();
+            }
+        });
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function subtitleSetting(): HasOne
+    {
+        return $this->hasOne(SubtitleSetting::class);
+    }
+
+    public function hookSetting(): HasOne
+    {
+        return $this->hasOne(HookSetting::class);
+    }
+
+    public function transcript(): HasOne
+    {
+        return $this->hasOne(Transcript::class);
+    }
+
+    public function generatedClips(): HasMany
+    {
+        return $this->hasMany(GeneratedClip::class)->orderBy('ranking');
+    }
+}

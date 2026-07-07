@@ -1,0 +1,29 @@
+<div class="wizard fade-in" x-show="!done && step === 7">
+  <div class="wiz-head">
+    <div class="wiz-kicker">Langkah 7 dari 7</div>
+    <h1 class="wiz-title">Pilih clip untuk dirender</h1>
+    <p class="wiz-desc" x-text="'AI menemukan ' + clips.length + ' momen. Pilih satu untuk dipotong, diberi layout, subtitle, dan hook.'"></p>
+  </div>
+
+  <div x-show="renderError" style="margin-bottom:16px;padding:12px 16px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:10px;font-size:13.5px;color:#f87171" x-text="renderError"></div>
+
+  <div class="clip-list">
+    <template x-for="c in clips" :key="c.ranking">
+      <button class="clip-card-s" :class="{ on: selectedClip === c.ranking }" @click="selectedClip = c.ranking" type="button">
+        <div class="clip-rank" x-text="c.ranking"></div>
+        <div>
+          <div class="clip-topic" x-text="c.topic"></div>
+          <div class="clip-reason" x-text="c.reason"></div>
+          <div class="clip-time">
+            <span x-text="'⧗ ' + fmtClock(c.start_seconds) + ' → ' + fmtClock(c.end_seconds)"></span>
+            <span x-text="'durasi ' + Math.round(c.end_seconds - c.start_seconds) + 's'"></span>
+          </div>
+        </div>
+        <div class="clip-aside">
+          <span class="viral" :class="c.viral_potential" x-text="'● ' + c.viral_potential"></span>
+          <span class="clip-pick" x-text="selectedClip === c.ranking ? '✓ Dipilih' : 'Pilih clip ini'"></span>
+        </div>
+      </button>
+    </template>
+  </div>
+</div>

@@ -1,0 +1,59 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Str;
+
+class GeneratedClip extends Model
+{
+    public $incrementing = false;
+    protected $keyType = 'string';
+
+    protected $fillable = [
+        'id',
+        'clip_project_id',
+        'ranking',
+        'start_seconds',
+        'end_seconds',
+        'topic',
+        'reason',
+        'viral_potential',
+        'hook_text',
+        'subtitle_json',
+        'caption',
+        'hashtags_json',
+        'output_path',
+        'status',
+        'error_msg',
+    ];
+
+    protected $casts = [
+        'ranking'       => 'integer',
+        'start_seconds' => 'float',
+        'end_seconds'   => 'float',
+        'subtitle_json'  => 'array',
+        'hashtags_json'  => 'array',
+    ];
+
+    protected static function boot(): void
+    {
+        parent::boot();
+        static::creating(function ($model) {
+            if (!$model->id) {
+                $model->id = (string) Str::uuid();
+            }
+        });
+    }
+
+    public function clipProject(): BelongsTo
+    {
+        return $this->belongsTo(ClipProject::class);
+    }
+
+    public function durationSeconds(): float
+    {
+        return $this->end_seconds - $this->start_seconds;
+    }
+}

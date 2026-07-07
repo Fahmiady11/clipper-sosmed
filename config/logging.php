@@ -127,6 +127,39 @@ return [
             'path' => storage_path('logs/laravel.log'),
         ],
 
+        // Clipper — all app activity (stack: console + daily file)
+        'clipper' => [
+            'driver' => 'stack',
+            'channels' => ['clipper_daily', 'stderr'],
+            'ignore_exceptions' => false,
+        ],
+
+        'clipper_daily' => [
+            'driver' => 'daily',
+            'path'   => storage_path('logs/clipper/app.log'),
+            'level'  => 'debug',
+            'days'   => 14,
+            'replace_placeholders' => true,
+        ],
+
+        // Job-specific log (AnalyzeVideoJob, RenderClipJob)
+        'clipper_jobs' => [
+            'driver' => 'daily',
+            'path'   => storage_path('logs/clipper/jobs.log'),
+            'level'  => 'debug',
+            'days'   => 14,
+            'replace_placeholders' => true,
+        ],
+
+        // API request log
+        'clipper_api' => [
+            'driver' => 'daily',
+            'path'   => storage_path('logs/clipper/api.log'),
+            'level'  => 'info',
+            'days'   => 7,
+            'replace_placeholders' => true,
+        ],
+
     ],
 
 ];

@@ -39,4 +39,18 @@ return [
         'key' => env('GEMINI_API_KEY'),
     ],
 
+    'ytdlp' => [
+        'path'                 => env('YTDLP_PATH', 'yt-dlp'),
+        'cookies_file'         => env('YTDLP_COOKIES', ''),         // path to Netscape cookies.txt
+        'cookies_from_browser' => env('YTDLP_COOKIES_BROWSER', ''), // browser name (chrome/safari/firefox)
+    ],
+
+    'ffmpeg' => [
+        'path' => env('FFMPEG_PATH', 'ffmpeg'),
+    ],
+
+    'groq' => [
+        'api_key' => env('GROQ_API_KEY'),
+    ],
+
 ];
