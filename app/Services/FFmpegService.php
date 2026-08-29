@@ -45,7 +45,7 @@ class FFmpegService
         $filterGraph = $this->layout->layoutFilter($mode, $filterLabel);
 
         $cmd = sprintf(
-            '%s -y -i %s -filter_complex %s -map %s -map 0:a? -c:v libx264 -c:a aac -movflags +faststart %s 2>&1',
+            '%s -y -i %s -filter_complex %s -map %s -map 0:a? -c:v libx264 -preset slow -crf 18 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart %s 2>&1',
             $this->bin,
             escapeshellarg($input),
             escapeshellarg($filterGraph),
@@ -62,7 +62,7 @@ class FFmpegService
         $assFilter = 'ass=' . $assPath . ':fontsdir=' . $fontsdir;
 
         $cmd = sprintf(
-            '%s -y -i %s -vf %s -c:v libx264 -c:a copy -movflags +faststart %s 2>&1',
+            '%s -y -i %s -vf %s -c:v libx264 -preset slow -crf 18 -pix_fmt yuv420p -c:a copy -movflags +faststart %s 2>&1',
             $this->bin,
             escapeshellarg($input),
             escapeshellarg($assFilter),
@@ -220,7 +220,7 @@ class FFmpegService
         }
 
         $cmd = sprintf(
-            '%s -y -i %s -vf %s -c:v libx264 -c:a copy -movflags +faststart %s 2>&1',
+            '%s -y -i %s -vf %s -c:v libx264 -preset slow -crf 18 -pix_fmt yuv420p -c:a copy -movflags +faststart %s 2>&1',
             $this->bin,
             escapeshellarg($input),
             escapeshellarg(implode(',', $filters)),
@@ -306,7 +306,7 @@ class FFmpegService
         file_put_contents($listFile, $content);
 
         $cmd = sprintf(
-            '%s -y -f concat -safe 0 -i %s -c:v libx264 -c:a aac -movflags +faststart %s 2>&1',
+            '%s -y -f concat -safe 0 -i %s -c:v libx264 -preset slow -crf 18 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart %s 2>&1',
             $this->bin,
             escapeshellarg($listFile),
             escapeshellarg($output)
