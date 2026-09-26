@@ -12,6 +12,13 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Behind a tunnel/proxy (ngrok, cloudflared) the app sees plain http;
+        // trusting X-Forwarded-* makes it generate https URLs (no mixed-content CSS).
+        // TRUSTED_PROXIES=* for local tunnels; leave unset when not behind a proxy.
+        if ($proxies = env('TRUSTED_PROXIES')) {
+            $middleware->trustProxies(at: $proxies === '*' ? '*' : explode(',', $proxies));
+        }
+
         // Allow API routes to read the web session so Auth::user() works
         // for browser-initiated fetch() calls (SPA pattern without Sanctum).
         $middleware->group('api', [
