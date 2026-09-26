@@ -158,11 +158,12 @@ class FFmpegService
             }
         }
 
-        foreach ($this->wordCues($timedWords, $clipStart, $hookDuration) as $cue) {
-            $ass .= $this->dialogue($cue['start'], $cue['end'], $cue['karaoke']);
-        }
-        foreach ($this->proportionalCues($untimed, $clipStart, $hookDuration, $hlColor) as $cue) {
-            $ass .= $this->dialogue($cue['start'], $cue['end'], $cue['karaoke']);
+        $cues = array_merge(
+            $this->wordCues($timedWords, $clipStart, $hookDuration),
+            $this->proportionalCues($untimed, $clipStart, $hookDuration)
+        );
+        foreach ($cues as $cue) {
+            $ass .= $this->highlightDialogues($cue, $hlColor);
         }
 
         return $ass;
@@ -174,12 +175,43 @@ class FFmpegService
     }
 
     /**
+     * One event per word: the whole cue stays on screen and only the word being
+     * spoken takes the highlight colour; words before and after it stay the
+     * base text colour (matches the studio preview). Events are back to back,
+     * so the line never flickers or stacks.
+     *
+     * @param array{start: float, end: float, words: array<int, array{text: string, start: float}>} $cue
+     */
+    private function highlightDialogues(array $cue, string $hlColor): string
+    {
+        $words  = $cue['words'];
+        $hl     = '{\\1c&H' . substr($hlColor, 4) . '&}'; // &H00BBGGRR -> \1c&HBBGGRR&
+        $out    = '';
+
+        foreach ($words as $i => $active) {
+            $from = $i === 0 ? $cue['start'] : $active['start'];
+            $to   = $words[$i + 1]['start'] ?? $cue['end'];
+            if ($to <= $from) {
+                continue;
+            }
+
+            $text = implode(' ', array_map(
+                fn($w, $j) => $j === $i ? $hl . $w['text'] . '{\\r}' : $w['text'],
+                $words,
+                array_keys($words)
+            ));
+            $out .= $this->dialogue($from, $to, $text);
+        }
+
+        return $out;
+    }
+
+    /**
      * Group timed words into short cues. A cue breaks at MAX_CUE_WORDS, at a
      * pause longer than CUE_BREAK_GAP, or after sentence-ending punctuation.
-     * Karaoke durations come from each word's actual start, so the highlight
-     * follows the speaker instead of an even split.
+     * Each word keeps its real start, so the highlight follows the speaker.
      *
-     * @return array<int, array{start: float, end: float, karaoke: string}>
+     * @return array<int, array{start: float, end: float, words: array}>
      */
     private function wordCues(array $words, float $clipStart, float $hookDuration): array
     {
@@ -222,20 +254,14 @@ class FFmpegService
             // but never into the next cue (ASS would stack them as two rows).
             $end = min(max($g[count($g) - 1]['end'] + self::CUE_HOLD, $start + 0.3), $nextStart);
 
-            $karaoke = '';
-            foreach ($g as $i => $w) {
-                $until    = $g[$i + 1]['start'] ?? $end;
-                $k        = max(1, (int) round(($until - $w['start']) * 100));
-                $karaoke .= "{\\k{$k}}{$w['text']} ";
-            }
-            $cues[] = ['start' => $start, 'end' => $end, 'karaoke' => rtrim($karaoke)];
+            $cues[] = ['start' => $start, 'end' => $end, 'words' => $g];
         }
 
         return $cues;
     }
 
     /** Fallback for segments without word timing: split evenly by word count. */
-    private function proportionalCues(array $segments, float $clipStart, float $hookDuration, string $hlColor): array
+    private function proportionalCues(array $segments, float $clipStart, float $hookDuration): array
     {
         $cues = [];
         // Normalize: clip-relative times + hook-window clamp
@@ -278,15 +304,15 @@ class FFmpegService
             $dur    = $seg['end'] - $seg['start'];
             $cursor = $seg['start'];
 
+            $perWord = $dur / $total;
             foreach (array_chunk($words, self::MAX_CUE_WORDS) as $chunk) {
-                $w       = count($chunk);
-                $cEnd    = $cursor + $dur * ($w / $total);
-                $cues[] = [
-                    'start'   => $cursor,
-                    'end'     => $cEnd,
-                    'karaoke' => $this->buildKaraokeText(implode(' ', $chunk), $cursor, $cEnd, $hlColor),
-                ];
-                $cursor  = $cEnd;
+                $cueStart = $cursor;
+                $cueWords = [];
+                foreach ($chunk as $word) {
+                    $cueWords[] = ['text' => $word, 'start' => $cursor];
+                    $cursor    += $perWord;
+                }
+                $cues[] = ['start' => $cueStart, 'end' => $cursor, 'words' => $cueWords];
             }
         }
 
@@ -460,25 +486,5 @@ class FFmpegService
         $g = hexdec(substr($hex, 2, 2));
         $b = hexdec(substr($hex, 4, 2));
         return sprintf('&H00%02X%02X%02X', $b, $g, $r);
-    }
-
-    private function buildKaraokeText(string $text, float $start, float $end, string $hlAssColor): string
-    {
-        $words = explode(' ', $text);
-        $count = count($words);
-        if ($count === 0) return $text;
-
-        $dur       = $end - $start;
-        $perWord   = ($dur / $count) * 100; // centiseconds
-
-        // {\kXX} per word = karaoke sweep using the Style's Primary/Secondary
-        // colours (un-sung = Secondary, sung = Primary). No manual \c override —
-        // it persists across words and forced the whole line one colour.
-        $out = '';
-        foreach ($words as $word) {
-            $k = (int) round($perWord);
-            $out .= "{\\k{$k}}{$word} ";
-        }
-        return rtrim($out);
     }
 }

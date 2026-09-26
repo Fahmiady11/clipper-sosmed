@@ -34,13 +34,17 @@ class SubtitleTimingTest extends TestCase
             ],
         ]];
 
-        $cues = $this->dialogues((new FFmpegService())->buildAssFile($segments, [], 100.0));
+        $cues = $this->dialogues((new FFmpegService())->buildAssFile($segments, ['highlight_color' => '#facc15'], 100.0));
 
-        $this->assertCount(2, $cues);
-        $this->assertSame('0:00:00.00', $cues[0]['start']);
-        $this->assertSame('{\k50}satu {\k65}dua', $cues[0]['text']);
-        $this->assertSame('0:00:06.00', $cues[1]['start']);
-        $this->assertSame('{\k50}tiga {\k75}empat', $cues[1]['text']);
+        // One event per word; the cue text stays, only the spoken word is coloured
+        $hl = '{\1c&H15CCFA&}';
+        $r  = '{\r}';
+        $this->assertSame([
+            ['start' => '0:00:00.00', 'end' => '0:00:00.50', 'text' => "{$hl}satu{$r} dua"],
+            ['start' => '0:00:00.50', 'end' => '0:00:01.15', 'text' => "satu {$hl}dua{$r}"],
+            ['start' => '0:00:06.00', 'end' => '0:00:06.50', 'text' => "{$hl}tiga{$r} empat"],
+            ['start' => '0:00:06.50', 'end' => '0:00:07.25', 'text' => "tiga {$hl}empat{$r}"],
+        ], $cues);
     }
 
     public function test_words_before_clip_or_under_hook_are_dropped(): void
@@ -67,8 +71,9 @@ class SubtitleTimingTest extends TestCase
 
         $cues = $this->dialogues((new FFmpegService())->buildAssFile($segments, []));
 
-        $this->assertCount(1, $cues);
-        $this->assertSame('0:00:02.00', $cues[0]['end']);
+        $this->assertCount(2, $cues); // one event per word
+        $this->assertSame('0:00:01.00', $cues[1]['start']);
+        $this->assertSame('0:00:02.00', $cues[1]['end']);
     }
 
     public function test_ass_time_never_rolls_centiseconds_to_100(): void
