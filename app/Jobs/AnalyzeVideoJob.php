@@ -6,6 +6,7 @@ use App\Models\ClipProject;
 use App\Models\GeneratedClip;
 use App\Models\Transcript;
 use App\Services\GeminiService;
+use App\Services\MusicService;
 use App\Services\TranscriptService;
 use App\Services\YtDlpService;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -120,6 +121,7 @@ class AnalyzeVideoJob implements ShouldQueue
                 'viral_potential' => $clip['viral_potential'] ?? 'sedang',
                 'hook_text'       => mb_substr($clip['hook_text'] ?? '', 0, 100) ?: null,
                 'subtitle_json'   => $clip['subtitle_segments'] ?? [],
+                'music_mood'      => MusicService::normalizeMood($clip['music_mood'] ?? null),
                 'status'          => 'pending',
             ]);
             $log->debug('GeneratedClip saved', ['ranking' => $clip['ranking']]);

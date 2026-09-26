@@ -25,6 +25,9 @@ class ProjectController extends Controller
             'duration_mode' => $data['duration_mode'],
             'min_duration'  => $data['min_duration'] ?? null,
             'max_duration'  => $data['max_duration'] ?? null,
+            'music_enabled' => $data['music']['enabled'] ?? false,
+            'music_mood'    => $data['music']['mood'] ?? null,
+            'music_volume'  => $data['music']['volume'] ?? 15,
             'status'        => 'processing',
         ]);
 

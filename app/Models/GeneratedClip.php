@@ -24,6 +24,8 @@ class GeneratedClip extends Model
         'subtitle_json',
         'caption',
         'hashtags_json',
+        'music_mood',
+        'music_track',
         'output_path',
         'status',
         'error_msg',

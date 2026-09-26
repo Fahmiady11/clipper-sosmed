@@ -313,6 +313,7 @@ class GeminiService
             "viral_potential": "tinggi"|"sedang"|"rendah",
             "hook_text": string (kalimat hook max 100 karakter bahasa {$langHint}, harus dari kalimat pembuka segmen atau adaptasinya),
             "completion_check": string (konfirmasi bahwa topik selesai di end_seconds, bukan terpotong),
+            "music_mood": "energetic"|"chill"|"inspiring"|"dramatic"|"funny"|"sad" (suasana musik latar yang paling cocok dengan emosi segmen),
             "subtitle_segments": [{"start": float, "end": float, "text": string}]
           }
         ]

@@ -25,6 +25,9 @@ class ClipProject extends Model
         'duration_mode',
         'min_duration',
         'max_duration',
+        'music_enabled',
+        'music_mood',
+        'music_volume',
         'status',
         'progress_stage',
         'progress_message',
@@ -36,6 +39,8 @@ class ClipProject extends Model
         'duration_seconds' => 'integer',
         'min_duration'     => 'integer',
         'max_duration'     => 'integer',
+        'music_enabled'    => 'boolean',
+        'music_volume'     => 'integer',
     ];
 
     protected static function boot(): void

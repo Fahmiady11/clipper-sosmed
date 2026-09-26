@@ -59,6 +59,32 @@
           </div>
         </div>
       </div>
+
+      <div class="fblock" style="margin-top:28px">
+        <button class="tgl" :class="{ on: musicEnabled }" @click="musicEnabled = !musicEnabled" type="button">
+          <span class="tgl-track"></span>
+          <span class="tgl-text">Tambahkan musik latar</span>
+        </button>
+      </div>
+      <div class="settings-group" :class="{ off: !musicEnabled }">
+        <div class="fblock">
+          <div class="fblock-title" style="margin-bottom:10px">Mood musik</div>
+          <div class="seg" style="flex-wrap:wrap">
+            <button :class="{ on: musicMood === '' }" @click="musicMood = ''" type="button">Otomatis (AI)</button>
+            <template x-for="m in MUSIC_MOODS" :key="m.id">
+              <button :class="{ on: musicMood === m.id }" @click="musicMood = m.id" type="button" x-text="m.label"></button>
+            </template>
+          </div>
+        </div>
+        <div class="fblock">
+          <div class="fblock-title" style="margin-bottom:10px">Volume musik</div>
+          <div class="sld-wrap">
+            <input class="sld" type="range" min="5" max="40" step="1" x-model.number="musicVolume" />
+            <span class="sld-val" x-text="musicVolume + '%'"></span>
+          </div>
+          <div style="margin-top:8px;font-size:12px;color:var(--text-dim)">Volume otomatis turun saat ada suara orang bicara.</div>
+        </div>
+      </div>
     </div>
     <div style="position:sticky;top:130px">
       <div class="preview-label"><span>Live preview · 9:16</span><span x-text="currentLayout.title"></span></div>

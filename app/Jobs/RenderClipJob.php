@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\GeneratedClip;
 use App\Services\FFmpegService;
+use App\Services\MusicService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -19,7 +20,7 @@ class RenderClipJob implements ShouldQueue
 
     public function __construct(public string $clipId) {}
 
-    public function handle(FFmpegService $ffmpeg): void
+    public function handle(FFmpegService $ffmpeg, MusicService $music): void
     {
         $log  = Log::channel('clipper_jobs');
         $clip = GeneratedClip::with(['clipProject.subtitleSetting', 'clipProject.hookSetting', 'clipProject.transcript'])->findOrFail($this->clipId);
@@ -127,7 +128,23 @@ class RenderClipJob implements ShouldQueue
             $current = $final;
         }
 
-        // 5. Move to output
+        // 6. Background music (ducked under the voice)
+        $musicTrack = null;
+        if ($project->music_enabled) {
+            $mood  = $project->music_mood ?? $clip->music_mood;
+            $track = $music->pickTrack($mood, $clip->id);
+            if ($track) {
+                $log->info('Mixing music', ['mood' => $mood, 'track' => basename($track), 'volume' => $project->music_volume]);
+                $withMusic = $tempDir . '/music_' . $this->clipId . '.mp4';
+                $ffmpeg->mixMusic($current, $track, (int) $project->music_volume, $withMusic);
+                $current = $withMusic;
+                $musicTrack = basename($track);
+            } else {
+                $log->warning('Music enabled but library is empty — skipped', ['path' => config('services.music.path')]);
+            }
+        }
+
+        // 7. Move to output
         $outDir  = 'clips/' . $project->user_id . '/' . $project->id;
         Storage::makeDirectory($outDir);
         $outPath = $outDir . '/' . $this->clipId . '.mp4';
@@ -135,7 +152,7 @@ class RenderClipJob implements ShouldQueue
 
         $this->cleanupTemp($tempDir, $this->clipId);
 
-        $clip->update(['output_path' => $outPath, 'status' => 'done']);
+        $clip->update(['output_path' => $outPath, 'status' => 'done', 'music_track' => $musicTrack]);
 
         $log->info('RenderClipJob done', [
             'clip_id'    => $this->clipId,
@@ -160,7 +177,7 @@ class RenderClipJob implements ShouldQueue
 
     private function cleanupTemp(string $dir, string $clipId): void
     {
-        foreach (['cut_', 'layout_', 'subtitled_', 'hook_', 'final_', 'sub_'] as $prefix) {
+        foreach (['cut_', 'layout_', 'subtitled_', 'hook_', 'final_', 'sub_', 'music_'] as $prefix) {
             foreach (['.mp4', '.ass'] as $ext) {
                 $f = $dir . '/' . $prefix . $clipId . $ext;
                 if (file_exists($f)) @unlink($f);

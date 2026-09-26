@@ -49,6 +49,11 @@ return [
         'path' => env('FFMPEG_PATH', 'ffmpeg'),
     ],
 
+    'music' => [
+        // Royalty-free tracks, one folder per mood: <path>/<mood>/*.mp3
+        'path' => env('MUSIC_LIBRARY_PATH', storage_path('app/music')),
+    ],
+
     'groq' => [
         'api_key' => env('GROQ_API_KEY'),
     ],

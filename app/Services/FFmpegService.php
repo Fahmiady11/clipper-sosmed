@@ -433,6 +433,74 @@ class FFmpegService
         return implode('\n', $lines);
     }
 
+    /**
+     * Lay a looped music bed under the clip's audio. The music is ducked
+     * (sidechaincompress keyed on the voice) so speech stays clear, and fades
+     * in/out at the clip edges. Video is stream-copied — no re-encode.
+     *
+     * @param int $volumePercent Music level before ducking (0–100).
+     */
+    public function mixMusic(string $input, string $musicPath, int $volumePercent, string $output): void
+    {
+        $duration = $this->probeDuration($input);
+        $volume   = max(0, min(100, $volumePercent)) / 100;
+        $fadeOut  = max(0, $duration - 1.5);
+        $norm     = 'aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo';
+
+        $music = sprintf('[1:a]%s,volume=%.2f,afade=t=in:d=1,afade=t=out:st=%.3f:d=1.5', $norm, $volume, $fadeOut);
+
+        $filter = $this->hasAudio($input)
+            ? "{$music}[m];[0:a]{$norm},asplit=2[voice][key];"
+              . '[m][key]sidechaincompress=threshold=0.02:ratio=8:attack=20:release=400[duck];'
+              . '[voice][duck]amix=inputs=2:duration=first:normalize=0[aout]'
+            : "{$music}[aout]";
+
+        $cmd = sprintf(
+            '%s -y -i %s -stream_loop -1 -i %s -filter_complex %s -map 0:v -map %s -t %s -c:v copy -c:a aac -b:a 192k -movflags +faststart %s 2>&1',
+            $this->bin,
+            escapeshellarg($input),
+            escapeshellarg($musicPath),
+            escapeshellarg($filter),
+            escapeshellarg('[aout]'),
+            escapeshellarg(sprintf('%.3f', $duration)),
+            escapeshellarg($output)
+        );
+
+        $this->exec($cmd, 'mixMusic');
+    }
+
+    private function probeDuration(string $input): float
+    {
+        exec(sprintf(
+            '%s -v error -show_entries format=duration -of default=nw=1:nk=1 %s 2>&1',
+            $this->probeBin(),
+            escapeshellarg($input)
+        ), $out, $code);
+
+        $duration = (float) ($out[0] ?? 0);
+        if ($code !== 0 || $duration <= 0) {
+            throw new RuntimeException('ffprobe duration failed: ' . implode("\n", $out));
+        }
+        return $duration;
+    }
+
+    private function hasAudio(string $input): bool
+    {
+        exec(sprintf(
+            '%s -v error -select_streams a -show_entries stream=index -of csv=p=0 %s 2>&1',
+            $this->probeBin(),
+            escapeshellarg($input)
+        ), $out, $code);
+
+        return $code === 0 && trim(implode('', $out)) !== '';
+    }
+
+    private function probeBin(): string
+    {
+        // ffprobe ships next to ffmpeg; FFMPEG_PATH may be an absolute path
+        return preg_replace('/ffmpeg(\.exe)?$/', 'ffprobe$1', $this->bin);
+    }
+
     public function concatVideos(array $inputs, string $output): void
     {
         $listFile = tempnam(sys_get_temp_dir(), 'ffconcat_');

@@ -8,6 +8,7 @@ function studio() {
     'clipCount','durationMode','minDuration','maxDuration',
     'subtitleEnabled','subtitleFont','subtitleSize','subtitleTextColor','subtitleHighlight','subtitlePos','subtitleBg',
     'hookEnabled','hookText','hookAi','hookDuration','hookPos','hookTextColor','hookBg',
+    'musicEnabled','musicMood','musicVolume',
     'generateStarted','generateProgress','generateLogIdx',
     'projectId','clips','selectedClip',
     'downloadUrl','resultHookText',
@@ -46,6 +47,7 @@ function studio() {
     subtitlePos: 'bottom', subtitleBg: 'semi',
     hookEnabled: true, hookText: 'Ingin lebih baik? Coba ini.', hookAi: false,
     hookDuration: 3, hookPos: 'center', hookTextColor: '#ffffff', hookBg: 'semi',
+    musicEnabled: false, musicMood: '', musicVolume: 15,
     generateStarted: false, generateProgress: 0, generateLogIdx: 0, generateTimer: null,
     generateError: null, generateLogMsg: null,
     projectId: null,
@@ -72,6 +74,10 @@ function studio() {
     ],
     FONTS: ['Arial','Roboto','Montserrat','Oswald','Bebas Neue'],
     COLOR_PRESETS: ['#ffffff','#facc15','#2dd4bf','#a78bfa','#60a5fa','#fb7185','#f97316','#000000'],
+    MUSIC_MOODS: [
+      { id:'energetic', label:'Energik' }, { id:'chill', label:'Santai' }, { id:'inspiring', label:'Inspiratif' },
+      { id:'dramatic', label:'Dramatis' }, { id:'funny', label:'Lucu' }, { id:'sad', label:'Sedih' },
+    ],
     HL_PRESETS:    ['#facc15','#2dd4bf','#a78bfa','#60a5fa','#fb7185','#22c55e','#ffffff','#f97316'],
     STAGES: [
       { msg:'AnalyzeVideoJob di-dispatch ke queue',           dur:600  },
@@ -369,6 +375,11 @@ function studio() {
               position: this.hookPos,
               text_color: this.hookTextColor,
               background_style: this.hookBg,
+            },
+            music: {
+              enabled: this.musicEnabled,
+              mood: this.musicMood || null,
+              volume: this.musicVolume,
             },
           }),
         });

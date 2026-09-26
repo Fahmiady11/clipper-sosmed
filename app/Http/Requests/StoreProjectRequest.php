@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Services\MusicService;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreProjectRequest extends FormRequest
@@ -38,6 +39,11 @@ class StoreProjectRequest extends FormRequest
             'hook.position'              => ['sometimes', 'in:top,center,bottom'],
             'hook.text_color'            => ['sometimes', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'hook.background_style'      => ['sometimes', 'in:none,semi,full'],
+
+            'music'                      => ['sometimes', 'array'],
+            'music.enabled'              => ['sometimes', 'boolean'],
+            'music.mood'                 => ['sometimes', 'nullable', 'in:' . implode(',', MusicService::MOODS)],
+            'music.volume'               => ['sometimes', 'integer', 'min:0', 'max:100'],
         ];
     }
 }

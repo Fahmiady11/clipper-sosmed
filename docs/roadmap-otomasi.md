@@ -21,12 +21,21 @@ Catatan: project yang transcript-nya sudah tersimpan sebelum perubahan ini tidak
 
 Opsional berikutnya: transkripsi ulang per klip + forced alignment (WhisperX / stable-ts) untuk akurasi maksimal.
 
-## Fase 1 — Musik otomatis
+## Fase 1 — Musik otomatis (selesai)
 
-- Library lokal musik bebas royalti, di-tag mood & BPM.
-- Gemini tentukan mood klip → pilih lagu.
-- Mixing FFmpeg dengan ducking (`sidechaincompress`) agar suara tetap jelas.
-- Sound trending TikTok **tidak bisa** dipasang via API — alternatif: upload sebagai draft lalu tambah sound manual.
+- Library musik bebas royalti di disk, satu folder per mood:
+  ```
+  storage/app/music/
+    energetic/  chill/  inspiring/  dramatic/  funny/  sad/
+  ```
+  Format: mp3, m4a, aac, wav, ogg. Lokasi bisa diganti lewat `MUSIC_LIBRARY_PATH` di `.env`.
+  Folder mood kosong → diambil dari track mana saja di library. Library kosong → musik dilewati (tercatat di log).
+- Gemini mengisi `music_mood` per klip; user bisa pilih "Otomatis (AI)" atau paksa satu mood di langkah 5 studio.
+- Track dipilih stabil per klip (render ulang = lagu yang sama), tersebar antar klip.
+- `FFmpegService::mixMusic`: musik di-loop, fade in 1 dtk / fade out 1.5 dtk, di-*duck* (~10 dB) saat ada suara orang, video tidak di-encode ulang.
+- Hanya pakai lagu yang kamu punya haknya (royalty-free / berlisensi). Sound trending TikTok **tidak bisa** dipasang via API.
+
+Setelah pull: `php artisan migrate`.
 
 ## Fase 2 — Upload TikTok
 
