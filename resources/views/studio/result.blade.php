@@ -48,7 +48,7 @@
       </div>
       <div class="done-banner-txt">
         <h3>Clip berhasil dirender</h3>
-        <p x-text="selectedClipObj ? '\"' + selectedClipObj.topic + '\" · ranking #' + selectedClipObj.ranking + ' · potensi viral ' + selectedClipObj.viral_potential : ''"></p>
+        <p x-text="selectedClipObj ? '“' + selectedClipObj.topic + '” · ranking #' + selectedClipObj.ranking + ' · potensi viral ' + selectedClipObj.viral_potential : ''"></p>
       </div>
       <span class="status-pill">DONE</span>
     </div>
