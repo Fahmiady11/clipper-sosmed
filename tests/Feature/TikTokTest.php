@@ -172,6 +172,18 @@ class TikTokTest extends TestCase
         Queue::assertPushed(UploadToTikTokJob::class, fn($job) => $job->clipId === $clip->id && $job->accountId === $mine->id);
     }
 
+    public function test_upload_rejects_account_without_video_upload_scope(): void
+    {
+        Queue::fake();
+        $user    = User::factory()->create();
+        $clip    = $this->doneClip($user);
+        $account = $this->account($user, ['scope' => 'user.info.basic']);
+
+        $this->actingAs($user)->postJson("/api/clips/{$clip->id}/tiktok", ['account_id' => $account->id])
+            ->assertStatus(422)->assertJsonFragment(['message' => 'Akun TikTok ini belum memberi izin video.upload. Aktifkan scope video.upload di app TikTok, lalu hubungkan ulang akun.']);
+        Queue::assertNothingPushed();
+    }
+
     public function test_job_uploads_and_records_inbox_status(): void
     {
         $user    = User::factory()->create();

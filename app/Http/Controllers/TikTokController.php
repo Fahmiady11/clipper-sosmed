@@ -74,6 +74,11 @@ class TikTokController extends Controller
         $account = TiktokAccount::where('user_id', Auth::id())->findOrFail($data['account_id']);
 
         abort_if($clip->status !== 'done' || !$clip->output_path, 422, 'Clip belum selesai dirender.');
+        abort_if(
+            $account->scope !== null && !in_array('video.upload', preg_split('/[\s,]+/', $account->scope), true),
+            422,
+            'Akun TikTok ini belum memberi izin video.upload. Aktifkan scope video.upload di app TikTok, lalu hubungkan ulang akun.'
+        );
 
         if (in_array($clip->tiktok_status, ['queued', 'uploading', 'processing'], true)) {
             return $this->statusResponse($clip);
