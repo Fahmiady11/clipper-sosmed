@@ -14,7 +14,7 @@ Penyebab subtitle kadang cepat / pas / lambat:
 1. **Cut tidak presisi** — `ffmpeg -ss … -c copy` mundur ke keyframe sebelumnya (0–5 dtk di video YouTube), jadi klip mulai lebih awal dari `start_seconds` dan subtitle telat dengan selisih berbeda-beda per klip.
    → Cut sekarang digabung ke pass `applyLayout` (re-encode, seek frame-accurate).
 2. **Timing per kata ditebak rata** — durasi segmen dibagi rata ke jumlah kata, padahal ada jeda di tengah segmen.
-   → Transcript sekarang menyimpan `words: [{start, end, text}]` per segmen (dari `tOffsetMs` caption otomatis YouTube, atau Groq `timestamp_granularities=word`). Cue & karaoke `\k` disusun dari timestamp kata asli. Segmen tanpa `words` (caption manual / transcript lama) tetap pakai cara proporsional.
+   → Transcript sekarang menyimpan `words: [{start, end, text}]` per segmen (dari `tOffsetMs` caption otomatis YouTube, atau Groq `timestamp_granularities=word`). Cue disusun dari timestamp kata asli; hanya kata yang sedang diucapkan diberi warna highlight. Segmen tanpa `words` (caption manual / transcript lama) tetap pakai cara proporsional.
 3. **Bug pembulatan waktu ASS** — `1.996s` jadi `0:00:01.100`. Diperbaiki.
 
 Catatan: project yang transcript-nya sudah tersimpan sebelum perubahan ini tidak punya `words`; buat project baru untuk dapat timing per kata.
