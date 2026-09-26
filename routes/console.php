@@ -15,3 +15,13 @@ Schedule::call(function () {
             $clip->delete();
         });
 })->everyMinute()->name('purge-expired-clips');
+
+// Autopilot: check each enabled video source whose interval has elapsed
+Schedule::call(function () {
+    App\Models\VideoSource::where('enabled', true)->get()
+        ->filter->isDue()
+        ->each(function ($source) {
+            $source->update(['last_run_at' => now()]); // don't re-dispatch while this run is queued
+            App\Jobs\DiscoverVideosJob::dispatch($source->id);
+        });
+})->everyTenMinutes()->name('autopilot-discover')->withoutOverlapping();

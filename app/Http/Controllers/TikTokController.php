@@ -70,7 +70,7 @@ class TikTokController extends Controller
     public function creatorInfo(int $accountId): JsonResponse
     {
         $account = TiktokAccount::where('user_id', Auth::id())->findOrFail($accountId);
-        abort_unless($this->hasScope($account, 'video.publish'), 422, $this->scopeMessage('video.publish'));
+        abort_unless($account->hasScope('video.publish'), 422, TiktokAccount::scopeMessage('video.publish'));
 
         try {
             return response()->json($this->tiktok->creatorInfo($account));
@@ -96,7 +96,7 @@ class TikTokController extends Controller
 
         abort_if($clip->status !== 'done' || !$clip->output_path, 422, 'Clip belum selesai dirender.');
         $scope = $mode === 'direct' ? 'video.publish' : 'video.upload';
-        abort_unless($this->hasScope($account, $scope), 422, $this->scopeMessage($scope));
+        abort_unless($account->hasScope($scope), 422, TiktokAccount::scopeMessage($scope));
 
         if (in_array($clip->tiktok_status, ['queued', 'uploading', 'processing'], true)) {
             return $this->statusResponse($clip);
@@ -139,18 +139,6 @@ class TikTokController extends Controller
         }
 
         return $this->statusResponse($clip);
-    }
-
-    /** Unknown scope (TikTok didn't report it) is treated as granted; the API will say otherwise. */
-    private function hasScope(TiktokAccount $account, string $scope): bool
-    {
-        return $account->scope === null
-            || in_array($scope, preg_split('/[\s,]+/', $account->scope), true);
-    }
-
-    private function scopeMessage(string $scope): string
-    {
-        return "Akun TikTok ini belum memberi izin {$scope}. Aktifkan scope {$scope} di app TikTok (dan di TIKTOK_SCOPES), lalu hubungkan ulang akun.";
     }
 
     private function ownedClip(string $clipId): GeneratedClip

@@ -5,6 +5,7 @@
   </div>
   <div class="topbar-nav">
     <a class="active" href="#" @click.prevent="restart()">Project baru</a>
+    <a href="/autopilot">Autopilot</a>
     <a href="#" @click.prevent="historyOpen = true; loadHistory()" style="position:relative">
       Riwayat
       <span x-show="history.length > 0" x-text="history.length"

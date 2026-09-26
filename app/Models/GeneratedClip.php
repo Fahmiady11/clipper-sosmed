@@ -32,6 +32,7 @@ class GeneratedClip extends Model
         'tiktok_error',
         'output_path',
         'status',
+        'review_status',
         'error_msg',
     ];
 

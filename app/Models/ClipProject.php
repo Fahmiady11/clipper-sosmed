@@ -16,6 +16,7 @@ class ClipProject extends Model
     protected $fillable = [
         'id',
         'user_id',
+        'video_source_id',
         'youtube_url',
         'video_title',
         'duration_seconds',
@@ -56,6 +57,11 @@ class ClipProject extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function videoSource(): BelongsTo
+    {
+        return $this->belongsTo(VideoSource::class);
     }
 
     public function subtitleSetting(): HasOne

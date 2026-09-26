@@ -3,61 +3,18 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreProjectRequest;
-use App\Jobs\AnalyzeVideoJob;
 use App\Models\ClipProject;
-use App\Models\HookSetting;
-use App\Models\SubtitleSetting;
+use App\Services\ProjectCreator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 
 class ProjectController extends Controller
 {
-    public function store(StoreProjectRequest $request): JsonResponse
+    public function store(StoreProjectRequest $request, ProjectCreator $creator): JsonResponse
     {
-        $data = $request->validated();
-
-        $project = ClipProject::create([
-            'user_id'       => Auth::id(),
-            'youtube_url'   => $data['youtube_url'],
-            'layout_type'   => $data['layout_type'],
-            'clip_count'    => $data['clip_count'],
-            'duration_mode' => $data['duration_mode'],
-            'min_duration'  => $data['min_duration'] ?? null,
-            'max_duration'  => $data['max_duration'] ?? null,
-            'music_enabled' => $data['music']['enabled'] ?? false,
-            'music_mood'    => $data['music']['mood'] ?? null,
-            'music_volume'  => $data['music']['volume'] ?? 15,
-            'status'        => 'processing',
-        ]);
-
-        // Create subtitle settings
-        $sub = $data['subtitle'] ?? [];
-        SubtitleSetting::create([
-            'clip_project_id'  => $project->id,
-            'enabled'          => $sub['enabled'] ?? true,
-            'font_family'      => $sub['font_family'] ?? 'Montserrat',
-            'font_size'        => $sub['font_size'] ?? 42,
-            'text_color'       => $sub['text_color'] ?? '#ffffff',
-            'highlight_color'  => $sub['highlight_color'] ?? '#facc15',
-            'position'         => $sub['position'] ?? 'bottom',
-            'background_style' => $sub['background_style'] ?? 'semi',
-        ]);
-
-        // Create hook settings
-        $hook = $data['hook'] ?? [];
-        HookSetting::create([
-            'clip_project_id'  => $project->id,
-            'enabled'          => $hook['enabled'] ?? true,
-            'hook_text'        => $hook['hook_text'] ?? null,
-            'is_ai_generated'  => $hook['is_ai_generated'] ?? false,
-            'duration_seconds' => $hook['duration_seconds'] ?? 3.0,
-            'position'         => $hook['position'] ?? 'center',
-            'text_color'       => $hook['text_color'] ?? '#ffffff',
-            'background_style' => $hook['background_style'] ?? 'semi',
-        ]);
-
-        AnalyzeVideoJob::dispatch($project->id);
+        $data    = $request->validated();
+        $project = $creator->create(Auth::id(), $data['youtube_url'], $data);
         $this->ensureQueueWorkerRunning();
 
         Log::channel('clipper_api')->info('Project created, AnalyzeVideoJob dispatched', [

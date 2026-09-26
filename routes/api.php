@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AutopilotController;
 use App\Http\Controllers\ClipController;
 use App\Http\Controllers\DownloadController;
 use App\Http\Controllers\MetaController;
@@ -27,6 +28,15 @@ Route::middleware('auth')->group(function () {
     Route::get('/tiktok/accounts/{accountId}/creator-info', [TikTokController::class, 'creatorInfo']);
     Route::post('/clips/{clipId}/tiktok', [TikTokController::class, 'upload']);
     Route::get('/clips/{clipId}/tiktok-status', [TikTokController::class, 'status']);
+
+    Route::get('/autopilot/sources', [AutopilotController::class, 'sources']);
+    Route::post('/autopilot/sources', [AutopilotController::class, 'storeSource']);
+    Route::patch('/autopilot/sources/{sourceId}', [AutopilotController::class, 'updateSource']);
+    Route::delete('/autopilot/sources/{sourceId}', [AutopilotController::class, 'destroySource']);
+    Route::post('/autopilot/sources/{sourceId}/run', [AutopilotController::class, 'runSource']);
+    Route::get('/autopilot/review', [AutopilotController::class, 'review']);
+    Route::post('/autopilot/review/{clipId}/approve', [AutopilotController::class, 'approve']);
+    Route::post('/autopilot/review/{clipId}/reject', [AutopilotController::class, 'reject']);
 });
 
 // Legacy routes (backward compat — keep as-is)

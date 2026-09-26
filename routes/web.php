@@ -20,6 +20,7 @@ Route::post('/logout', [LogoutController::class, 'destroy'])->name('logout');
 // Protected routes
 Route::middleware('auth')->group(function () {
     Route::get('/', fn() => view('studio'))->name('home');
+    Route::get('/autopilot', fn() => view('autopilot'))->name('autopilot');
 
     // TikTok OAuth (redirect URI registered on the TikTok app → /tiktok/callback)
     Route::get('/tiktok/connect', [TikTokController::class, 'connect'])->name('tiktok.connect');

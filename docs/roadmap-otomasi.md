@@ -64,12 +64,26 @@ Mode **Posting langsung (Direct Post)** — selesai:
 - Form mengikuti syarat TikTok: nama akun dari `creator_info`, pilihan privasi tanpa default, toggle komentar/duet/stitch (mati jika dimatikan creator), caption (diisi dari caption Gemini, bisa diedit), teks persetujuan musik.
 - Sebelum app lolos audit TikTok, hanya privasi **Hanya saya** (`SELF_ONLY`) yang diterima.
 
-## Fase 3 — Discovery otomatis + approval
+## Fase 3 — Autopilot: discovery otomatis + antrian review (selesai)
 
-- YouTube Data API: search per niche/keyword, whitelist channel, filter durasi, views/jam, ada caption.
-- Scheduler Laravel tiap X jam; Gemini beri skor potensi.
-- Antrian approval (approve/reject satu klik) sebelum upload.
-- Perhatikan hak cipta: pakai channel yang mengizinkan clipping atau konten Creative Commons.
+Halaman **/autopilot** (link "Autopilot" di topbar studio):
+
+1. **Sumber video** — tambah *channel* (`@handle` atau URL channel) atau *keyword*. Per sumber: interval cek (jam), maks video per cek, rentang durasi video.
+   Tampilan klip (layout, jumlah klip, subtitle, hook, musik) di-*snapshot* dari project manual terakhir saat sumber dibuat; kalau belum ada project, hook ditulis AI.
+2. Scheduler (`routes/console.php`, tiap 10 menit) mengirim `DiscoverVideosJob` untuk sumber yang sudah jatuh tempo → `yt-dlp --flat-playlist` (channel: tab `/videos`; keyword: `ytsearchdate`) → video baru yang lolos filter durasi dibuatkan project.
+   Video yang pernah diproses tidak akan diproses lagi (`discovered_videos`, unik per user).
+3. Analisis Gemini seperti biasa, lalu **semua klip langsung dirender** dan masuk **Antrian review** (`review_status = pending`).
+4. **Approve** → upload ke TikTok (draft/inbox) ke akun yang dipilih. **Reject** → file klip dihapus.
+
+Menjalankan di lokal (selain `php artisan serve`):
+```bash
+php artisan migrate
+php artisan queue:work --timeout=3600   # analisis video panjang bisa lama
+php artisan schedule:work               # menjalankan pengecekan sumber berkala
+```
+"Cek sekarang" di kartu sumber menjalankan pencarian tanpa menunggu jadwal.
+
+Catatan biaya: setiap video = 1 panggilan Gemini + render N klip. Mulai dengan `maks 1 video/cek` dan interval longgar.
 
 ## Fase 4 — Autopilot & tracking
 

@@ -52,6 +52,62 @@ class YtDlpService
         ];
     }
 
+    /**
+     * List candidate videos without downloading: a channel's latest uploads or
+     * the newest search results for a keyword.
+     *
+     * @return array<int, array{id: string, title: ?string, channel: ?string, duration: ?int}>
+     */
+    public function listVideos(string $type, string $value, int $limit = 20): array
+    {
+        set_time_limit(0);
+
+        $target = $type === 'keyword'
+            ? "ytsearchdate{$limit}:{$value}"
+            : self::channelVideosUrl($value);
+
+        $cmd = sprintf(
+            '%s%s --flat-playlist --dump-json --playlist-end %d --no-warnings %s 2>&1',
+            $this->bin,
+            $this->cookieArg,
+            $limit,
+            escapeshellarg($target)
+        );
+        exec($cmd, $output, $code);
+
+        $videos = [];
+        foreach ($output as $line) {
+            $json = str_starts_with(trim($line), '{') ? json_decode($line, true) : null;
+            if (!$json || empty($json['id']) || ($json['live_status'] ?? null) === 'is_upcoming') {
+                continue;
+            }
+            $videos[] = [
+                'id'       => $json['id'],
+                'title'    => $json['title'] ?? null,
+                'channel'  => $json['channel'] ?? $json['uploader'] ?? null,
+                'duration' => isset($json['duration']) ? (int) $json['duration'] : null,
+            ];
+        }
+
+        if ($code !== 0 && empty($videos)) {
+            throw new RuntimeException('yt-dlp listing failed: ' . implode("\n", array_slice($output, -5)));
+        }
+
+        return $videos;
+    }
+
+    /** Accepts a channel URL or a bare @handle; returns its /videos tab URL. */
+    public static function channelVideosUrl(string $value): string
+    {
+        $value = trim($value);
+        if (!str_starts_with($value, 'http')) {
+            $value = 'https://www.youtube.com/' . (str_starts_with($value, '@') ? $value : '@' . $value);
+        }
+        $value = rtrim($value, '/');
+
+        return preg_match('#/(videos|streams|shorts)$#', $value) ? $value : $value . '/videos';
+    }
+
     public function download(string $url, string $outPath): void
     {
         set_time_limit(0);

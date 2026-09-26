@@ -110,8 +110,9 @@ class AnalyzeVideoJob implements ShouldQueue
 
         // Stage 6 — save to DB
         $this->stage($project, 6);
+        $auto = $project->video_source_id !== null;
         foreach ($clips as $clip) {
-            GeneratedClip::create([
+            $generated = GeneratedClip::create([
                 'clip_project_id' => $project->id,
                 'ranking'         => $clip['ranking'],
                 'start_seconds'   => $clip['start_seconds'],
@@ -123,7 +124,12 @@ class AnalyzeVideoJob implements ShouldQueue
                 'subtitle_json'   => $clip['subtitle_segments'] ?? [],
                 'music_mood'      => MusicService::normalizeMood($clip['music_mood'] ?? null),
                 'status'          => 'pending',
+                'review_status'   => $auto ? 'pending' : null,
             ]);
+            // Autopilot: render every clip straight away; they land in the review queue
+            if ($auto) {
+                RenderClipJob::dispatch($generated->id);
+            }
             $log->debug('GeneratedClip saved', ['ranking' => $clip['ranking']]);
         }
 
