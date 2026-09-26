@@ -42,16 +42,17 @@ class RenderClipJob implements ShouldQueue
             throw new \RuntimeException("Source video not found: {$srcVideo}");
         }
 
-        $step1 = $tempDir . '/cut_' . $this->clipId . '.mp4';
         $step2 = $tempDir . '/layout_' . $this->clipId . '.mp4';
 
-        // 1. Cut
-        $log->info('Cutting video', ['start' => $clip->start_seconds, 'end' => $clip->end_seconds]);
-        $ffmpeg->cut($srcVideo, $clip->start_seconds, $clip->end_seconds, $step1);
-
-        // 2. Apply layout
-        $log->info('Applying layout', ['layout' => $project->layout_type]);
-        $ffmpeg->applyLayout($step1, $project->layout_type, $step2);
+        // 1+2. Cut + layout in one re-encode pass. A stream-copy cut snaps to the
+        // previous keyframe, so the clip started up to a few seconds early and
+        // subtitles (timed from start_seconds) landed late by a varying amount.
+        $log->info('Cutting + applying layout', [
+            'layout' => $project->layout_type,
+            'start'  => $clip->start_seconds,
+            'end'    => $clip->end_seconds,
+        ]);
+        $ffmpeg->applyLayout($srcVideo, $project->layout_type, $step2, (float) $clip->start_seconds, (float) $clip->end_seconds);
 
         $current = $step2;
 

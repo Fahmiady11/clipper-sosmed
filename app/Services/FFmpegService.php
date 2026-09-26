@@ -6,7 +6,9 @@ use RuntimeException;
 
 class FFmpegService
 {
-    private const MAX_CUE_WORDS = 4; // words per subtitle cue (TikTok-style short lines)
+    private const MAX_CUE_WORDS = 4;    // words per subtitle cue (TikTok-style short lines)
+    private const CUE_BREAK_GAP = 0.6;  // seconds of silence that starts a new cue
+    private const CUE_HOLD      = 0.25; // seconds a cue lingers after its last word
 
     private string $bin;
     private VideoLayoutService $layout;
@@ -32,7 +34,14 @@ class FFmpegService
         $this->exec($cmd, 'cut');
     }
 
-    public function applyLayout(string $input, string $layoutType, string $output): void
+    /**
+     * @param float|null $start When given (with $end), trim the input in the same
+     *                          re-encode pass. Seeking while transcoding is
+     *                          frame-accurate, unlike cut()'s stream copy which
+     *                          snaps back to the previous keyframe and shifts
+     *                          the clip's t=0 away from $start (subtitle drift).
+     */
+    public function applyLayout(string $input, string $layoutType, string $output, ?float $start = null, ?float $end = null): void
     {
         // Map new layout IDs to VideoLayoutService's filter method
         $layoutMap = [
@@ -44,10 +53,19 @@ class FFmpegService
         $filterLabel = '[out]';
         $filterGraph = $this->layout->layoutFilter($mode, $filterLabel);
 
+        $trimIn  = '';
+        $trimOut = '';
+        if ($start !== null && $end !== null) {
+            $trimIn  = ' -ss ' . escapeshellarg(sprintf('%.3f', $start));
+            $trimOut = ' -t ' . escapeshellarg(sprintf('%.3f', $end - $start));
+        }
+
         $cmd = sprintf(
-            '%s -y -i %s -filter_complex %s -map %s -map 0:a? -c:v libx264 -preset slow -crf 18 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart %s 2>&1',
+            '%s -y%s -i %s%s -filter_complex %s -map %s -map 0:a? -c:v libx264 -preset slow -crf 18 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart %s 2>&1',
             $this->bin,
+            $trimIn,
             escapeshellarg($input),
+            $trimOut,
             escapeshellarg($filterGraph),
             escapeshellarg($filterLabel),
             escapeshellarg($output)
@@ -128,6 +146,98 @@ class FFmpegService
         $ass .= "[Events]\n";
         $ass .= "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n";
 
+        // Segments with word timing (ASR captions / Groq) are cued from the real
+        // word timestamps; the rest fall back to proportional splitting.
+        $timedWords = [];
+        $untimed    = [];
+        foreach ($segments as $seg) {
+            if (!empty($seg['words'])) {
+                array_push($timedWords, ...$seg['words']);
+            } else {
+                $untimed[] = $seg;
+            }
+        }
+
+        foreach ($this->wordCues($timedWords, $clipStart, $hookDuration) as $cue) {
+            $ass .= $this->dialogue($cue['start'], $cue['end'], $cue['karaoke']);
+        }
+        foreach ($this->proportionalCues($untimed, $clipStart, $hookDuration, $hlColor) as $cue) {
+            $ass .= $this->dialogue($cue['start'], $cue['end'], $cue['karaoke']);
+        }
+
+        return $ass;
+    }
+
+    private function dialogue(float $start, float $end, string $text): string
+    {
+        return 'Dialogue: 0,' . $this->toAssTime($start) . ',' . $this->toAssTime($end) . ",Default,,0,0,0,,{$text}\n";
+    }
+
+    /**
+     * Group timed words into short cues. A cue breaks at MAX_CUE_WORDS, at a
+     * pause longer than CUE_BREAK_GAP, or after sentence-ending punctuation.
+     * Karaoke durations come from each word's actual start, so the highlight
+     * follows the speaker instead of an even split.
+     *
+     * @return array<int, array{start: float, end: float, karaoke: string}>
+     */
+    private function wordCues(array $words, float $clipStart, float $hookDuration): array
+    {
+        $rel = [];
+        foreach ($words as $w) {
+            $start = (float) $w['start'] - $clipStart;
+            $end   = (float) $w['end'] - $clipStart;
+            $text  = trim($w['text'] ?? '');
+            if ($text === '' || $end <= $hookDuration) {
+                continue; // before the clip or hidden behind the hook
+            }
+            $rel[] = ['start' => max($start, $hookDuration), 'end' => $end, 'text' => $text];
+        }
+        usort($rel, fn($a, $b) => $a['start'] <=> $b['start']);
+
+        $groups = [];
+        $group  = [];
+        foreach ($rel as $w) {
+            if ($group) {
+                $prev  = $group[count($group) - 1];
+                $break = count($group) >= self::MAX_CUE_WORDS
+                    || $w['start'] - $prev['end'] > self::CUE_BREAK_GAP
+                    || preg_match('/[.?!]$/u', $prev['text']);
+                if ($break) {
+                    $groups[] = $group;
+                    $group    = [];
+                }
+            }
+            $group[] = $w;
+        }
+        if ($group) {
+            $groups[] = $group;
+        }
+
+        $cues = [];
+        foreach ($groups as $gi => $g) {
+            $start     = $g[0]['start'];
+            $nextStart = $groups[$gi + 1][0]['start'] ?? INF;
+            // Hold briefly after the last word so short cues stay readable,
+            // but never into the next cue (ASS would stack them as two rows).
+            $end = min(max($g[count($g) - 1]['end'] + self::CUE_HOLD, $start + 0.3), $nextStart);
+
+            $karaoke = '';
+            foreach ($g as $i => $w) {
+                $until    = $g[$i + 1]['start'] ?? $end;
+                $k        = max(1, (int) round(($until - $w['start']) * 100));
+                $karaoke .= "{\\k{$k}}{$w['text']} ";
+            }
+            $cues[] = ['start' => $start, 'end' => $end, 'karaoke' => rtrim($karaoke)];
+        }
+
+        return $cues;
+    }
+
+    /** Fallback for segments without word timing: split evenly by word count. */
+    private function proportionalCues(array $segments, float $clipStart, float $hookDuration, string $hlColor): array
+    {
+        $cues = [];
         // Normalize: clip-relative times + hook-window clamp
         $norm = [];
         foreach ($segments as $seg) {
@@ -171,15 +281,16 @@ class FFmpegService
             foreach (array_chunk($words, self::MAX_CUE_WORDS) as $chunk) {
                 $w       = count($chunk);
                 $cEnd    = $cursor + $dur * ($w / $total);
-                $start   = $this->toAssTime($cursor);
-                $end     = $this->toAssTime($cEnd);
-                $text    = $this->buildKaraokeText(implode(' ', $chunk), $cursor, $cEnd, $hlColor);
-                $ass    .= "Dialogue: 0,{$start},{$end},Default,,0,0,0,,{$text}\n";
+                $cues[] = [
+                    'start'   => $cursor,
+                    'end'     => $cEnd,
+                    'karaoke' => $this->buildKaraokeText(implode(' ', $chunk), $cursor, $cEnd, $hlColor),
+                ];
                 $cursor  = $cEnd;
             }
         }
 
-        return $ass;
+        return $cues;
     }
 
     /**
@@ -330,11 +441,12 @@ class FFmpegService
 
     private function toAssTime(float $seconds): string
     {
-        $whole = (int) $seconds;
-        $h  = intdiv($whole, 3600);
-        $m  = intdiv($whole % 3600, 60);
-        $s  = $whole % 60;
-        $cs = (int) round(fmod($seconds, 1) * 100);
+        // Round once on the total: rounding only the fraction turned 1.996s into "0:00:01.100"
+        $total = (int) round(max($seconds, 0) * 100);
+        $h  = intdiv($total, 360000);
+        $m  = intdiv($total % 360000, 6000);
+        $s  = intdiv($total % 6000, 100);
+        $cs = $total % 100;
         return sprintf('%d:%02d:%02d.%02d', $h, $m, $s, $cs);
     }
 

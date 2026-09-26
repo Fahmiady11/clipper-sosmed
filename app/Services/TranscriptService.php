@@ -7,6 +7,8 @@ use RuntimeException;
 
 class TranscriptService
 {
+    private const MAX_WORD_SECONDS = 1.2;
+
     public function fetch(string $youtubeUrl, ?string $videoPath = null): array
     {
         $videoId = $this->extractVideoId($youtubeUrl);
@@ -118,6 +120,12 @@ class TranscriptService
         return ['language' => $lang, 'items' => $items];
     }
 
+    /**
+     * Segments keep the caption line shape Gemini expects ({start, end, text}).
+     * Auto (ASR) captions also carry per-word offsets (segs[].tOffsetMs); those
+     * are kept as `words` so subtitles can follow real speech timing instead of
+     * spreading a line's duration evenly over its words.
+     */
     private function parseJson3(array $data): array
     {
         $events   = $data['events'] ?? [];
@@ -133,11 +141,59 @@ class TranscriptService
                 continue;
             }
 
-            $segments[] = [
-                'start' => round(($event['tStartMs'] ?? 0) / 1000, 2),
-                'end'   => round((($event['tStartMs'] ?? 0) + ($event['dDurationMs'] ?? 3000)) / 1000, 2),
+            $startMs = (int) ($event['tStartMs'] ?? 0);
+            $endMs   = $startMs + (int) ($event['dDurationMs'] ?? 3000);
+
+            $segment = [
+                'start' => round($startMs / 1000, 2),
+                'end'   => round($endMs / 1000, 2),
                 'text'  => $text,
             ];
+
+            // Manual captions have one seg per line and no offsets — no word timing
+            $wordSegs = array_values(array_filter($event['segs'], fn($seg) => trim($seg['utf8'] ?? '') !== ''));
+            $hasWordTiming = count($wordSegs) > 1
+                || collect($wordSegs)->contains(fn($seg) => isset($seg['tOffsetMs']));
+
+            if ($hasWordTiming) {
+                $segment['words'] = array_map(fn($seg) => [
+                    'start'  => ($startMs + (int) ($seg['tOffsetMs'] ?? 0)) / 1000,
+                    'end'    => $endMs / 1000, // tightened below
+                    'text'   => trim($seg['utf8']),
+                ], $wordSegs);
+            }
+
+            $segments[] = $segment;
+        }
+
+        return $this->tightenWordEnds($segments);
+    }
+
+    /**
+     * json3 only gives word starts. A word ends when the next one starts, but
+     * never later than its caption event, nor more than MAX_WORD_SECONDS after
+     * it started (so the last word before a pause doesn't linger).
+     */
+    private function tightenWordEnds(array $segments): array
+    {
+        $refs = [];
+        foreach ($segments as $si => $seg) {
+            foreach ($seg['words'] ?? [] as $wi => $_) {
+                $refs[] = [$si, $wi];
+            }
+        }
+
+        $n = count($refs);
+        for ($i = 0; $i < $n; $i++) {
+            [$si, $wi] = $refs[$i];
+            $word = $segments[$si]['words'][$wi];
+            $end  = min($word['end'], $word['start'] + self::MAX_WORD_SECONDS);
+            if ($i + 1 < $n) {
+                [$nsi, $nwi] = $refs[$i + 1];
+                $end = min($end, $segments[$nsi]['words'][$nwi]['start']);
+            }
+            $segments[$si]['words'][$wi]['start'] = round($word['start'], 3);
+            $segments[$si]['words'][$wi]['end']   = round(max($end, $word['start'] + 0.05), 3);
         }
 
         return $segments;
@@ -175,19 +231,23 @@ class TranscriptService
             return ['language' => 'id', 'segments' => []];
         }
 
+        // Both granularities: segments feed Gemini, words drive subtitle timing.
+        // The field repeats, which a PHP array can't express, so build the body.
+        [$body, $contentType] = $this->multipartBody([
+            ['model', 'whisper-large-v3-turbo'],
+            ['response_format', 'verbose_json'],
+            ['timestamp_granularities[]', 'segment'],
+            ['timestamp_granularities[]', 'word'],
+            ['language', 'id'],
+        ], 'file', $tmpAudio, 'audio.mp3', 'audio/mpeg');
+
         $ch = curl_init('https://api.groq.com/openai/v1/audio/transcriptions');
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => [
-                'file'                      => new \CURLFile($tmpAudio, 'audio/mpeg', 'audio.mp3'),
-                'model'                     => 'whisper-large-v3-turbo',
-                'response_format'           => 'verbose_json',
-                'timestamp_granularities[]' => 'segment',
-                'language'                  => 'id',
-            ],
-            CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $groqKey],
-            CURLOPT_TIMEOUT    => 300,
+            CURLOPT_POSTFIELDS     => $body,
+            CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . $groqKey, 'Content-Type: ' . $contentType],
+            CURLOPT_TIMEOUT        => 300,
         ]);
 
         $response = curl_exec($ch);
@@ -211,12 +271,60 @@ class TranscriptService
             ->values()
             ->all();
 
+        $segments = $this->attachGroqWords($segments, $data['words'] ?? []);
+
         $log->info('fallbackGroq: done', ['segments' => count($segments)]);
 
         return [
             'language' => $data['language'] ?? 'id',
             'segments' => $segments,
         ];
+    }
+
+    /**
+     * Groq returns words as one flat list; hang each on the segment whose
+     * window contains its start (words and segments are both time-ordered).
+     */
+    private function attachGroqWords(array $segments, array $words): array
+    {
+        $si    = 0;
+        $count = count($segments);
+        foreach ($words as $w) {
+            $text = trim($w['word'] ?? '');
+            if ($text === '' || $count === 0) {
+                continue;
+            }
+            $start = (float) $w['start'];
+            while ($si + 1 < $count && $start >= $segments[$si + 1]['start']) {
+                $si++;
+            }
+            $segments[$si]['words'][] = [
+                'start' => round($start, 3),
+                'end'   => round(max((float) $w['end'], $start + 0.05), 3),
+                'text'  => $text,
+            ];
+        }
+
+        return $segments;
+    }
+
+    /** @return array{0: string, 1: string} [body, content-type header value] */
+    private function multipartBody(array $fields, string $fileField, string $filePath, string $fileName, string $mime): array
+    {
+        $boundary = '----clipper' . bin2hex(random_bytes(8));
+        $body     = '';
+        foreach ($fields as [$name, $value]) {
+            $body .= "--{$boundary}\r\n"
+                . "Content-Disposition: form-data; name=\"{$name}\"\r\n\r\n"
+                . "{$value}\r\n";
+        }
+        $body .= "--{$boundary}\r\n"
+            . "Content-Disposition: form-data; name=\"{$fileField}\"; filename=\"{$fileName}\"\r\n"
+            . "Content-Type: {$mime}\r\n\r\n"
+            . file_get_contents($filePath) . "\r\n"
+            . "--{$boundary}--\r\n";
+
+        return [$body, 'multipart/form-data; boundary=' . $boundary];
     }
 
     private function extractVideoId(string $url): ?string
