@@ -104,10 +104,47 @@
             <button :class="{ on: tiktokAccountId === a.id }" @click="tiktokAccountId = a.id" type="button" x-text="a.display_name || ('Akun #' + a.id)"></button>
           </template>
         </div>
+        <div class="seg" style="margin-bottom:12px">
+          <button :class="{ on: tiktokMode === 'inbox' }"  @click="tiktokMode = 'inbox'"  type="button">Draft (inbox)</button>
+          <button :class="{ on: tiktokMode === 'direct' }" @click="tiktokMode = 'direct'" type="button">Posting langsung</button>
+        </div>
+
+        {{-- Direct post form (TikTok requires creator name, privacy choice, interaction toggles, consent) --}}
+        <div x-show="tiktokMode === 'direct'" style="margin-bottom:14px">
+          <div x-show="tiktokCreatorLoading" style="font-size:13px;color:var(--text-dim)">Membaca info akun TikTok…</div>
+          <div x-show="tiktokCreatorError" style="font-size:13px;color:#f87171" x-text="tiktokCreatorError"></div>
+          <template x-if="tiktokCreator">
+            <div>
+              <div style="font-size:13px;color:var(--text-muted);margin-bottom:10px">
+                Posting sebagai <b style="color:var(--text)" x-text="tiktokCreator.creator_nickname || tiktokCreator.creator_username"></b>
+              </div>
+              <div class="fblock-title" style="margin-bottom:6px">Caption</div>
+              <textarea class="field" maxlength="2200" x-model="tiktokTitle" style="min-height:90px"></textarea>
+
+              <div class="fblock-title" style="margin:12px 0 6px">Siapa yang bisa melihat</div>
+              <div class="seg" style="flex-wrap:wrap">
+                <template x-for="p in (tiktokCreator.privacy_level_options || [])" :key="p">
+                  <button :class="{ on: tiktokPrivacy === p }" @click="tiktokPrivacy = p" type="button" x-text="PRIVACY_LABELS[p] || p"></button>
+                </template>
+              </div>
+              <div style="margin-top:6px;font-size:12px;color:var(--text-dim)">Selama app belum diaudit TikTok, hanya "Hanya saya" yang diterima.</div>
+
+              <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;font-size:13px">
+                <label :style="tiktokCreator.comment_disabled ? 'opacity:.5' : ''"><input type="checkbox" x-model="tiktokAllowComment" :disabled="tiktokCreator.comment_disabled"> Izinkan komentar</label>
+                <label :style="tiktokCreator.duet_disabled ? 'opacity:.5' : ''"><input type="checkbox" x-model="tiktokAllowDuet" :disabled="tiktokCreator.duet_disabled"> Izinkan duet</label>
+                <label :style="tiktokCreator.stitch_disabled ? 'opacity:.5' : ''"><input type="checkbox" x-model="tiktokAllowStitch" :disabled="tiktokCreator.stitch_disabled"> Izinkan stitch</label>
+              </div>
+              <div style="margin-top:10px;font-size:12px;color:var(--text-dim)">
+                Dengan memposting, kamu menyetujui Music Usage Confirmation TikTok. Video mungkin butuh beberapa menit sampai tampil di profil.
+              </div>
+            </div>
+          </template>
+        </div>
+
         <button class="btn" @click="uploadToTiktok()"
-                :disabled="tiktokBusy || !tiktokAccountId"
-                :style="(tiktokBusy || !tiktokAccountId) ? 'opacity:.5;pointer-events:none' : ''"
-                x-text="tiktokBusy ? 'Mengupload…' : 'Kirim ke TikTok (draft)'"></button>
+                :disabled="!tiktokCanSubmit"
+                :style="!tiktokCanSubmit ? 'opacity:.5;pointer-events:none' : ''"
+                x-text="tiktokBusy ? 'Mengupload…' : (tiktokMode === 'direct' ? 'Posting ke TikTok' : 'Kirim ke TikTok (draft)')"></button>
         <div x-show="tiktokStatus" style="margin-top:12px;font-size:13px"
              :style="tiktokStatus === 'failed' ? 'color:#f87171' : 'color:var(--text-muted)'"
              x-text="tiktokStatusLabel"></div>

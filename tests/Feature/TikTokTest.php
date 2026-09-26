@@ -180,8 +180,86 @@ class TikTokTest extends TestCase
         $account = $this->account($user, ['scope' => 'user.info.basic']);
 
         $this->actingAs($user)->postJson("/api/clips/{$clip->id}/tiktok", ['account_id' => $account->id])
-            ->assertStatus(422)->assertJsonFragment(['message' => 'Akun TikTok ini belum memberi izin video.upload. Aktifkan scope video.upload di app TikTok, lalu hubungkan ulang akun.']);
+            ->assertStatus(422)->assertJsonFragment(['message' => 'Akun TikTok ini belum memberi izin video.upload. Aktifkan scope video.upload di app TikTok (dan di TIKTOK_SCOPES), lalu hubungkan ulang akun.']);
         Queue::assertNothingPushed();
+    }
+
+    public function test_direct_post_sends_post_info(): void
+    {
+        $account = $this->account(User::factory()->create());
+        $path    = tempnam(sys_get_temp_dir(), 'vid');
+        file_put_contents($path, str_repeat('x', 500));
+
+        Http::fake([
+            'open.tiktokapis.com/v2/post/publish/video/init/' => Http::response([
+                'data' => ['publish_id' => 'pub-d', 'upload_url' => 'https://upload.example/d'],
+                'error' => ['code' => 'ok'],
+            ]),
+            'upload.example/*' => Http::response('', 201),
+        ]);
+
+        $postInfo = ['title' => 'halo #fyp', 'privacy_level' => 'SELF_ONLY', 'disable_comment' => false, 'disable_duet' => true, 'disable_stitch' => true];
+        $this->assertSame('pub-d', app(TikTokService::class)->directPost($account, $path, $postInfo));
+
+        Http::assertSent(fn(Request $r) => str_ends_with($r->url(), '/post/publish/video/init/')
+            && $r['post_info'] === $postInfo
+            && $r['source_info']['video_size'] === 500);
+        @unlink($path);
+    }
+
+    public function test_creator_info_posts_empty_json_object(): void
+    {
+        $user    = User::factory()->create();
+        $account = $this->account($user, ['scope' => 'user.info.basic,video.upload,video.publish']);
+        Http::fake(['open.tiktokapis.com/v2/post/publish/creator_info/query/' => Http::response([
+            'data' => ['creator_nickname' => 'Creator', 'privacy_level_options' => ['SELF_ONLY']],
+            'error' => ['code' => 'ok'],
+        ])]);
+
+        $this->actingAs($user)->getJson("/api/tiktok/accounts/{$account->id}/creator-info")
+            ->assertOk()->assertJson(['creator_nickname' => 'Creator']);
+        Http::assertSent(fn(Request $r) => $r->body() === '{}');
+    }
+
+    public function test_direct_upload_requires_privacy_and_publish_scope(): void
+    {
+        Queue::fake();
+        $user = User::factory()->create();
+        $clip = $this->doneClip($user);
+
+        $uploadOnly = $this->account($user, ['scope' => 'user.info.basic,video.upload']);
+        $this->actingAs($user)->postJson("/api/clips/{$clip->id}/tiktok", [
+            'account_id' => $uploadOnly->id, 'mode' => 'direct', 'privacy_level' => 'SELF_ONLY',
+        ])->assertStatus(422);
+
+        $full = $this->account($user, ['open_id' => 'open-3', 'scope' => 'user.info.basic,video.upload,video.publish']);
+        $this->actingAs($user)->postJson("/api/clips/{$clip->id}/tiktok", ['account_id' => $full->id, 'mode' => 'direct'])
+            ->assertJsonValidationErrors('privacy_level');
+
+        $this->actingAs($user)->postJson("/api/clips/{$clip->id}/tiktok", [
+            'account_id' => $full->id, 'mode' => 'direct', 'privacy_level' => 'SELF_ONLY',
+            'title' => 'caption', 'disable_comment' => true, 'disable_duet' => true, 'disable_stitch' => false,
+        ])->assertOk();
+
+        Queue::assertPushed(UploadToTikTokJob::class, fn($job) => $job->mode === 'direct'
+            && $job->postInfo === ['title' => 'caption', 'privacy_level' => 'SELF_ONLY', 'disable_comment' => true, 'disable_duet' => true, 'disable_stitch' => false]);
+    }
+
+    public function test_direct_job_records_published_status(): void
+    {
+        $user    = User::factory()->create();
+        $clip    = $this->doneClip($user);
+        $account = $this->account($user);
+
+        $svc = $this->mock(TikTokService::class);
+        $svc->shouldReceive('directPost')->once()->andReturn('pub-7');
+        $svc->shouldReceive('publishStatus')->once()->andReturn(['status' => 'PUBLISH_COMPLETE', 'fail_reason' => null]);
+
+        $job = new UploadToTikTokJob($clip->id, $account->id, 'direct', ['title' => 't', 'privacy_level' => 'SELF_ONLY']);
+        $job->pollSeconds = 0;
+        $this->app->call([$job, 'handle']);
+
+        $this->assertSame('published', $clip->refresh()->tiktok_status);
     }
 
     public function test_job_uploads_and_records_inbox_status(): void

@@ -8,9 +8,10 @@ use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
 /**
- * TikTok Login Kit (OAuth v2) + Content Posting API, "upload to inbox" flow:
- * the video lands in the creator's TikTok inbox as a draft and they finish
- * posting in the app (can add a trending sound there). Needs scope video.upload.
+ * TikTok Login Kit (OAuth v2) + Content Posting API. Two flows:
+ * - inbox (scope video.upload): video lands in the creator's TikTok inbox as a
+ *   draft; they finish posting in the app (can add a trending sound there).
+ * - direct post (scope video.publish): posted straight to the profile.
  */
 class TikTokService
 {
@@ -80,11 +81,37 @@ class TikTokService
     }
 
     /**
-     * Init an inbox upload and PUT the file.
+     * Upload to the creator's inbox as a draft (scope video.upload).
      *
      * @return string publish_id
      */
     public function uploadToInbox(TiktokAccount $account, string $path): string
+    {
+        return $this->initAndUpload($account, 'post/publish/inbox/video/init/', [], $path);
+    }
+
+    /**
+     * Post straight to the profile (scope video.publish). Until the app passes
+     * TikTok's audit only privacy_level SELF_ONLY is accepted.
+     *
+     * @param array{title: string, privacy_level: string, disable_comment: bool, disable_duet: bool, disable_stitch: bool} $postInfo
+     * @return string publish_id
+     */
+    public function directPost(TiktokAccount $account, string $path, array $postInfo): string
+    {
+        return $this->initAndUpload($account, 'post/publish/video/init/', ['post_info' => $postInfo], $path);
+    }
+
+    /**
+     * Creator settings TikTok requires the post form to honour: privacy
+     * options, which interactions are switched off, max video length.
+     */
+    public function creatorInfo(TiktokAccount $account): array
+    {
+        return $this->api($this->freshToken($account), 'post/publish/creator_info/query/', []);
+    }
+
+    private function initAndUpload(TiktokAccount $account, string $endpoint, array $body, string $path): string
     {
         $size = filesize($path);
         if (!$size) {
@@ -93,7 +120,7 @@ class TikTokService
 
         [$chunkSize, $chunkCount] = self::chunkPlan($size);
 
-        $data = $this->api($this->freshToken($account), 'post/publish/inbox/video/init/', [
+        $data = $this->api($this->freshToken($account), $endpoint, $body + [
             'source_info' => [
                 'source'            => 'FILE_UPLOAD',
                 'video_size'        => $size,
@@ -172,10 +199,11 @@ class TikTokService
 
     private function api(string $accessToken, string $endpoint, array $body): array
     {
+        // json_encode([]) is "[]"; TikTok expects an object even when empty
         $res = Http::withToken($accessToken)
             ->timeout(60)
-            ->asJson()
-            ->post(self::API . '/' . $endpoint, $body);
+            ->withBody($body ? json_encode($body) : '{}', 'application/json')
+            ->post(self::API . '/' . $endpoint);
 
         return $this->unwrap($res, $endpoint);
     }

@@ -58,6 +58,11 @@ function studio() {
     clipCaption: '', clipHashtags: [], loadingCaption: false,
     tiktokConfigured: false, tiktokAccounts: [], tiktokAccountId: null,
     tiktokStatus: null, tiktokError: null, tiktokTimer: null,
+    tiktokMode: 'inbox', tiktokCreator: null, tiktokCreatorError: null, tiktokCreatorLoading: false,
+    tiktokTitle: '', tiktokPrivacy: '', tiktokAllowComment: false, tiktokAllowDuet: false, tiktokAllowStitch: false,
+    PRIVACY_LABELS: {
+      PUBLIC_TO_EVERYONE: 'Publik', MUTUAL_FOLLOW_FRIENDS: 'Teman', FOLLOWER_OF_CREATOR: 'Follower', SELF_ONLY: 'Hanya saya',
+    },
     previewT: 0, previewTick: null,
 
     // ── constants ──────────────────────────────────────────────────────────
@@ -545,7 +550,7 @@ function studio() {
         uploading:  'Mengupload video ke TikTok…',
         processing: 'TikTok sedang memproses video…',
         inbox:      '✓ Terkirim ke inbox TikTok — buka app TikTok untuk menambah sound & posting.',
-        published:  '✓ Sudah diposting di TikTok.',
+        published:  '✓ Sudah diposting di TikTok (cek profil kamu; sebelum app diaudit, videonya private).',
         failed:     'Upload gagal.',
       }[this.tiktokStatus] || '';
     },
@@ -561,10 +566,42 @@ function studio() {
         }
       } catch (e) { console.error('loadTiktokAccounts', e); }
     },
+    get tiktokCanSubmit() {
+      if (this.tiktokBusy || !this.tiktokAccountId) return false;
+      if (this.tiktokMode === 'inbox') return true;
+      return !!this.tiktokCreator && !!this.tiktokPrivacy;
+    },
+    async loadTiktokCreator() {
+      this.tiktokCreator = null; this.tiktokCreatorError = null; this.tiktokPrivacy = '';
+      if (this.tiktokMode !== 'direct' || !this.tiktokAccountId) return;
+      if (!this.tiktokTitle && this.clipCaption) {
+        this.tiktokTitle = (this.clipCaption + '\n\n' + this.clipHashtags.join(' ')).trim().slice(0, 2200);
+      }
+      this.tiktokCreatorLoading = true;
+      try {
+        const res = await fetch(`/api/tiktok/accounts/${this.tiktokAccountId}/creator-info`, { headers: { 'Accept': 'application/json' } });
+        const data = await res.json();
+        if (!res.ok) { this.tiktokCreatorError = data.message || 'Gagal membaca info akun TikTok.'; return; }
+        this.tiktokCreator = data;
+        // Interactions the creator switched off can't be enabled
+        if (data.comment_disabled) this.tiktokAllowComment = false;
+        if (data.duet_disabled)    this.tiktokAllowDuet = false;
+        if (data.stitch_disabled)  this.tiktokAllowStitch = false;
+      } catch (e) {
+        this.tiktokCreatorError = 'Koneksi gagal.';
+      } finally { this.tiktokCreatorLoading = false; }
+    },
     async uploadToTiktok() {
       const clipId = this.selectedClipObj?.id;
-      if (!clipId || !this.tiktokAccountId) return;
+      if (!clipId || !this.tiktokCanSubmit) return;
       this.tiktokError = null;
+      const direct = this.tiktokMode === 'direct' ? {
+        title: this.tiktokTitle,
+        privacy_level: this.tiktokPrivacy,
+        disable_comment: !this.tiktokAllowComment,
+        disable_duet: !this.tiktokAllowDuet,
+        disable_stitch: !this.tiktokAllowStitch,
+      } : {};
       try {
         const res = await fetch(`/api/clips/${clipId}/tiktok`, {
           method: 'POST',
@@ -572,7 +609,7 @@ function studio() {
             'Content-Type': 'application/json', 'Accept': 'application/json',
             'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
           },
-          body: JSON.stringify({ account_id: this.tiktokAccountId }),
+          body: JSON.stringify({ account_id: this.tiktokAccountId, mode: this.tiktokMode, ...direct }),
         });
         const data = await res.json();
         if (!res.ok) { this.tiktokStatus = 'failed'; this.tiktokError = data.message || 'Gagal memulai upload.'; return; }
@@ -677,6 +714,8 @@ function studio() {
         if (this.done && this.selectedClipObj) { this.fetchCaption(); this.fetchTiktokStatus(); }
       });
       this.$watch('done', val => { if (val && this.selectedClipObj) this.fetchTiktokStatus(); });
+      this.$watch('tiktokMode', () => this.loadTiktokCreator());
+      this.$watch('tiktokAccountId', () => this.loadTiktokCreator());
 
       // Back from TikTok OAuth: /?tiktok=connected|denied|error|…
       const tiktokResult = new URLSearchParams(location.search).get('tiktok');

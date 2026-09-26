@@ -24,6 +24,7 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/tiktok/accounts', [TikTokController::class, 'accounts']);
     Route::delete('/tiktok/accounts/{accountId}', [TikTokController::class, 'disconnect']);
+    Route::get('/tiktok/accounts/{accountId}/creator-info', [TikTokController::class, 'creatorInfo']);
     Route::post('/clips/{clipId}/tiktok', [TikTokController::class, 'upload']);
     Route::get('/clips/{clipId}/tiktok-status', [TikTokController::class, 'status']);
 });

@@ -22,7 +22,16 @@ class UploadToTikTokJob implements ShouldQueue
 
     public int $pollSeconds = 6;
 
-    public function __construct(public string $clipId, public int $accountId) {}
+    /**
+     * @param string $mode     'inbox' (draft) or 'direct' (post to profile)
+     * @param array  $postInfo direct only: title, privacy_level, disable_* flags
+     */
+    public function __construct(
+        public string $clipId,
+        public int $accountId,
+        public string $mode = 'inbox',
+        public array $postInfo = [],
+    ) {}
 
     public function handle(TikTokService $tiktok): void
     {
@@ -31,9 +40,12 @@ class UploadToTikTokJob implements ShouldQueue
         $account = TiktokAccount::findOrFail($this->accountId);
 
         $clip->update(['tiktok_status' => 'uploading', 'tiktok_error' => null]);
-        $log->info('TikTok upload started', ['clip_id' => $clip->id, 'account' => $account->display_name]);
+        $log->info('TikTok upload started', ['clip_id' => $clip->id, 'account' => $account->display_name, 'mode' => $this->mode]);
 
-        $publishId = $tiktok->uploadToInbox($account, Storage::path($clip->output_path));
+        $path      = Storage::path($clip->output_path);
+        $publishId = $this->mode === 'direct'
+            ? $tiktok->directPost($account, $path, $this->postInfo)
+            : $tiktok->uploadToInbox($account, $path);
         $clip->update(['tiktok_publish_id' => $publishId, 'tiktok_status' => 'processing']);
 
         // TikTok processes the upload asynchronously; wait briefly for a final

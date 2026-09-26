@@ -59,7 +59,10 @@ Teknis:
 - `UploadToTikTokJob` tidak di-retry otomatis (retry = draft dobel). Status: queued → uploading → processing → inbox / failed.
 - Endpoint & format API ditulis dari dokumentasi v2 tanpa bisa dicek ulang dari environment ini; kalau TikTok mengembalikan error, pesan lengkapnya tampil di UI & log `clipper_jobs`.
 
-Berikutnya (opsional): *Direct Post* (scope `video.publish`, butuh audit TikTok agar bisa publik) + isi caption/hashtag otomatis.
+Mode **Posting langsung (Direct Post)** — selesai:
+- Aktifkan scope `video.publish` di app TikTok, set `TIKTOK_SCOPES=user.info.basic,video.upload,video.publish` di `.env`, lalu hubungkan ulang akun.
+- Form mengikuti syarat TikTok: nama akun dari `creator_info`, pilihan privasi tanpa default, toggle komentar/duet/stitch (mati jika dimatikan creator), caption (diisi dari caption Gemini, bisa diedit), teks persetujuan musik.
+- Sebelum app lolos audit TikTok, hanya privasi **Hanya saya** (`SELF_ONLY`) yang diterima.
 
 ## Fase 3 — Discovery otomatis + approval
 

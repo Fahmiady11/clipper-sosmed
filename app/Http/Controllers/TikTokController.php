@@ -67,18 +67,36 @@ class TikTokController extends Controller
         return response()->json(['success' => true]);
     }
 
+    public function creatorInfo(int $accountId): JsonResponse
+    {
+        $account = TiktokAccount::where('user_id', Auth::id())->findOrFail($accountId);
+        abort_unless($this->hasScope($account, 'video.publish'), 422, $this->scopeMessage('video.publish'));
+
+        try {
+            return response()->json($this->tiktok->creatorInfo($account));
+        } catch (Throwable $e) {
+            abort(502, $e->getMessage());
+        }
+    }
+
     public function upload(Request $request, string $clipId): JsonResponse
     {
-        $data    = $request->validate(['account_id' => ['required', 'integer']]);
+        $data = $request->validate([
+            'account_id'      => ['required', 'integer'],
+            'mode'            => ['sometimes', 'in:inbox,direct'],
+            'title'           => ['exclude_unless:mode,direct', 'nullable', 'string', 'max:2200'],
+            'privacy_level'   => ['exclude_unless:mode,direct', 'required', 'in:PUBLIC_TO_EVERYONE,MUTUAL_FOLLOW_FRIENDS,FOLLOWER_OF_CREATOR,SELF_ONLY'],
+            'disable_comment' => ['exclude_unless:mode,direct', 'boolean'],
+            'disable_duet'    => ['exclude_unless:mode,direct', 'boolean'],
+            'disable_stitch'  => ['exclude_unless:mode,direct', 'boolean'],
+        ]);
+        $mode    = $data['mode'] ?? 'inbox';
         $clip    = $this->ownedClip($clipId);
         $account = TiktokAccount::where('user_id', Auth::id())->findOrFail($data['account_id']);
 
         abort_if($clip->status !== 'done' || !$clip->output_path, 422, 'Clip belum selesai dirender.');
-        abort_if(
-            $account->scope !== null && !in_array('video.upload', preg_split('/[\s,]+/', $account->scope), true),
-            422,
-            'Akun TikTok ini belum memberi izin video.upload. Aktifkan scope video.upload di app TikTok, lalu hubungkan ulang akun.'
-        );
+        $scope = $mode === 'direct' ? 'video.publish' : 'video.upload';
+        abort_unless($this->hasScope($account, $scope), 422, $this->scopeMessage($scope));
 
         if (in_array($clip->tiktok_status, ['queued', 'uploading', 'processing'], true)) {
             return $this->statusResponse($clip);
@@ -90,7 +108,14 @@ class TikTokController extends Controller
             'tiktok_status'     => 'queued',
             'tiktok_error'      => null,
         ]);
-        UploadToTikTokJob::dispatch($clip->id, $account->id);
+        $postInfo = $mode === 'direct' ? [
+            'title'           => $data['title'] ?? '',
+            'privacy_level'   => $data['privacy_level'],
+            'disable_comment' => (bool) ($data['disable_comment'] ?? false),
+            'disable_duet'    => (bool) ($data['disable_duet'] ?? false),
+            'disable_stitch'  => (bool) ($data['disable_stitch'] ?? false),
+        ] : [];
+        UploadToTikTokJob::dispatch($clip->id, $account->id, $mode, $postInfo);
 
         return $this->statusResponse($clip);
     }
@@ -114,6 +139,18 @@ class TikTokController extends Controller
         }
 
         return $this->statusResponse($clip);
+    }
+
+    /** Unknown scope (TikTok didn't report it) is treated as granted; the API will say otherwise. */
+    private function hasScope(TiktokAccount $account, string $scope): bool
+    {
+        return $account->scope === null
+            || in_array($scope, preg_split('/[\s,]+/', $account->scope), true);
+    }
+
+    private function scopeMessage(string $scope): string
+    {
+        return "Akun TikTok ini belum memberi izin {$scope}. Aktifkan scope {$scope} di app TikTok (dan di TIKTOK_SCOPES), lalu hubungkan ulang akun.";
     }
 
     private function ownedClip(string $clipId): GeneratedClip
