@@ -37,11 +37,29 @@ Opsional berikutnya: transkripsi ulang per klip + forced alignment (WhisperX / s
 
 Setelah pull: `php artisan migrate`.
 
-## Fase 2 — Upload TikTok
+## Fase 2 — Upload TikTok (draft / inbox, selesai)
 
-- TikTok Content Posting API: OAuth per akun, mode *Upload to Inbox* (draft) dulu, lalu *Direct Post*.
-- Caption + hashtag dari Gemini (sudah ada di `GeminiService`).
-- App yang belum diaudit TikTok hanya bisa posting private; ada batas post per hari. Hindari bot browser (risiko ban).
+Alur: klip selesai dirender → pilih akun TikTok → **Kirim ke TikTok (draft)** → video masuk inbox/notifikasi app TikTok → tambah sound trending & posting dari app.
+
+Setup:
+1. Buat app di developers.tiktok.com, aktifkan **Login Kit** dan **Content Posting API**, scope `user.info.basic` + `video.upload`.
+2. TikTok mewajibkan redirect URI **HTTPS**. Di lokal pakai tunnel (mis. `ngrok http 8000` / `cloudflared tunnel`), lalu daftarkan `https://<tunnel>/tiktok/callback` di app TikTok dan buka studio lewat URL tunnel itu juga (supaya cookie login sama).
+3. Isi `.env`:
+   ```
+   TIKTOK_CLIENT_KEY=...
+   TIKTOK_CLIENT_SECRET=...
+   TIKTOK_REDIRECT_URI=https://<tunnel>/tiktok/callback
+   ```
+4. Selama app masih Sandbox: tambahkan akun TikTok penguji sebagai *target user* di pengaturan sandbox.
+5. `php artisan migrate` lalu `php artisan queue:restart`.
+
+Teknis:
+- `TikTokService`: OAuth v2 (`/v2/oauth/token/`), refresh otomatis sebelum access token habis, upload `inbox/video/init` + PUT per chunk (≤64 MB satu chunk, lebih besar dipecah 10 MB), cek `status/fetch`.
+- Token disimpan terenkripsi (`tiktok_accounts`), satu user bisa menghubungkan beberapa akun.
+- `UploadToTikTokJob` tidak di-retry otomatis (retry = draft dobel). Status: queued → uploading → processing → inbox / failed.
+- Endpoint & format API ditulis dari dokumentasi v2 tanpa bisa dicek ulang dari environment ini; kalau TikTok mengembalikan error, pesan lengkapnya tampil di UI & log `clipper_jobs`.
+
+Berikutnya (opsional): *Direct Post* (scope `video.publish`, butuh audit TikTok agar bisa publik) + isi caption/hashtag otomatis.
 
 ## Fase 3 — Discovery otomatis + approval
 

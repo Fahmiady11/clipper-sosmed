@@ -56,6 +56,8 @@ function studio() {
     resultHookText: 'Ingin lebih baik? Coba ini.',
     editHookOpen: false, draftHook: '', copied: '',
     clipCaption: '', clipHashtags: [], loadingCaption: false,
+    tiktokConfigured: false, tiktokAccounts: [], tiktokAccountId: null,
+    tiktokStatus: null, tiktokError: null, tiktokTimer: null,
     previewT: 0, previewTick: null,
 
     // ── constants ──────────────────────────────────────────────────────────
@@ -535,6 +537,65 @@ function studio() {
       this.copied = key;
       setTimeout(() => { this.copied = ''; }, 1200);
     },
+    // ── TikTok upload (inbox / draft) ──────────────────────────────────────
+    get tiktokBusy() { return ['queued', 'uploading', 'processing'].includes(this.tiktokStatus); },
+    get tiktokStatusLabel() {
+      return {
+        queued:     'Menunggu antrian…',
+        uploading:  'Mengupload video ke TikTok…',
+        processing: 'TikTok sedang memproses video…',
+        inbox:      '✓ Terkirim ke inbox TikTok — buka app TikTok untuk menambah sound & posting.',
+        published:  '✓ Sudah diposting di TikTok.',
+        failed:     'Upload gagal.',
+      }[this.tiktokStatus] || '';
+    },
+    async loadTiktokAccounts() {
+      try {
+        const res = await fetch('/api/tiktok/accounts', { headers: { 'Accept': 'application/json' } });
+        if (!res.ok) return;
+        const data = await res.json();
+        this.tiktokConfigured = data.configured;
+        this.tiktokAccounts = data.accounts || [];
+        if (!this.tiktokAccounts.some(a => a.id === this.tiktokAccountId)) {
+          this.tiktokAccountId = this.tiktokAccounts[0]?.id ?? null;
+        }
+      } catch (e) { console.error('loadTiktokAccounts', e); }
+    },
+    async uploadToTiktok() {
+      const clipId = this.selectedClipObj?.id;
+      if (!clipId || !this.tiktokAccountId) return;
+      this.tiktokError = null;
+      try {
+        const res = await fetch(`/api/clips/${clipId}/tiktok`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json', 'Accept': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
+          },
+          body: JSON.stringify({ account_id: this.tiktokAccountId }),
+        });
+        const data = await res.json();
+        if (!res.ok) { this.tiktokStatus = 'failed'; this.tiktokError = data.message || 'Gagal memulai upload.'; return; }
+        this.applyTiktokStatus(data);
+      } catch (e) {
+        this.tiktokStatus = 'failed'; this.tiktokError = 'Koneksi gagal.';
+      }
+    },
+    async fetchTiktokStatus() {
+      const clipId = this.selectedClipObj?.id;
+      if (!clipId) return;
+      try {
+        const res = await fetch(`/api/clips/${clipId}/tiktok-status`, { headers: { 'Accept': 'application/json' } });
+        if (res.ok) this.applyTiktokStatus(await res.json());
+      } catch (e) { console.error('fetchTiktokStatus', e); }
+    },
+    applyTiktokStatus(data) {
+      if (data.clip_id !== this.selectedClipObj?.id) return;
+      this.tiktokStatus = data.status;
+      this.tiktokError = data.error;
+      clearTimeout(this.tiktokTimer);
+      if (this.tiktokBusy) this.tiktokTimer = setTimeout(() => this.fetchTiktokStatus(), 4000);
+    },
     async fetchCaption() {
       const clipId = this.selectedClipObj?.id;
       if (!clipId) return;
@@ -612,8 +673,19 @@ function studio() {
       // Re-fetch caption when user switches to a different clip
       this.$watch('selectedClip', () => {
         this.clipCaption = ''; this.clipHashtags = [];
-        if (this.done && this.selectedClipObj) this.fetchCaption();
+        this.tiktokStatus = null; this.tiktokError = null;
+        if (this.done && this.selectedClipObj) { this.fetchCaption(); this.fetchTiktokStatus(); }
       });
+      this.$watch('done', val => { if (val && this.selectedClipObj) this.fetchTiktokStatus(); });
+
+      // Back from TikTok OAuth: /?tiktok=connected|denied|error|…
+      const tiktokResult = new URLSearchParams(location.search).get('tiktok');
+      if (tiktokResult) {
+        history.replaceState(null, '', location.pathname);
+        if (tiktokResult !== 'connected') alert('Gagal menghubungkan TikTok (' + tiktokResult + ').');
+      }
+      await this.loadTiktokAccounts();
+      if (this.done && this.selectedClipObj) this.fetchTiktokStatus();
       // If restored from session and already done
       if (this.done && this.selectedClipObj && !this.clipCaption) this.fetchCaption();
     },

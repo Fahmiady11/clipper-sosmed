@@ -5,6 +5,7 @@ use App\Http\Controllers\DownloadController;
 use App\Http\Controllers\MetaController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\RenderController;
+use App\Http\Controllers\TikTokController;
 use Illuminate\Support\Facades\Route;
 
 // New Studio API (auth required)
@@ -20,6 +21,11 @@ Route::middleware('auth')->group(function () {
     Route::get('/clips/{clipId}/render-status', [RenderController::class, 'renderStatus']);
     Route::get('/clips/{clipId}/caption', [RenderController::class, 'caption']);
     Route::get('/clips/{clipId}/download', [DownloadController::class, 'download']);
+
+    Route::get('/tiktok/accounts', [TikTokController::class, 'accounts']);
+    Route::delete('/tiktok/accounts/{accountId}', [TikTokController::class, 'disconnect']);
+    Route::post('/clips/{clipId}/tiktok', [TikTokController::class, 'upload']);
+    Route::get('/clips/{clipId}/tiktok-status', [TikTokController::class, 'status']);
 });
 
 // Legacy routes (backward compat — keep as-is)

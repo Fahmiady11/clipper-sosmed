@@ -83,6 +83,38 @@
       </div>
     </div>
 
+    {{-- Upload ke TikTok (draft / inbox) --}}
+    <div class="res-sec">
+      <div class="res-sec-head">
+        <span class="res-sec-title">Upload ke TikTok</span>
+        <a class="res-edit" href="/tiktok/connect" x-show="tiktokConfigured && tiktokAccounts.length > 0">+ Akun lain</a>
+      </div>
+
+      <div x-show="!tiktokConfigured" style="padding:8px 0;color:var(--text-dim);font-size:13px">
+        Isi <code>TIKTOK_CLIENT_KEY</code>, <code>TIKTOK_CLIENT_SECRET</code>, dan <code>TIKTOK_REDIRECT_URI</code> di <code>.env</code> untuk mengaktifkan upload.
+      </div>
+
+      <div x-show="tiktokConfigured && tiktokAccounts.length === 0" style="padding:8px 0">
+        <a class="btn btn-secondary" href="/tiktok/connect">Hubungkan akun TikTok</a>
+      </div>
+
+      <div x-show="tiktokConfigured && tiktokAccounts.length > 0">
+        <div class="seg" style="flex-wrap:wrap;margin-bottom:12px">
+          <template x-for="a in tiktokAccounts" :key="a.id">
+            <button :class="{ on: tiktokAccountId === a.id }" @click="tiktokAccountId = a.id" type="button" x-text="a.display_name || ('Akun #' + a.id)"></button>
+          </template>
+        </div>
+        <button class="btn" @click="uploadToTiktok()"
+                :disabled="tiktokBusy || !tiktokAccountId"
+                :style="(tiktokBusy || !tiktokAccountId) ? 'opacity:.5;pointer-events:none' : ''"
+                x-text="tiktokBusy ? 'Mengupload…' : 'Kirim ke TikTok (draft)'"></button>
+        <div x-show="tiktokStatus" style="margin-top:12px;font-size:13px"
+             :style="tiktokStatus === 'failed' ? 'color:#f87171' : 'color:var(--text-muted)'"
+             x-text="tiktokStatusLabel"></div>
+        <div x-show="tiktokStatus === 'failed' && tiktokError" style="margin-top:6px;font-size:12px;color:var(--text-dim)" x-text="tiktokError"></div>
+      </div>
+    </div>
+
     <div class="dl-row">
       <button class="btn btn-ghost" @click="restart()">← Buat project baru</button>
     </div>

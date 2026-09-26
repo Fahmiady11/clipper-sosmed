@@ -49,6 +49,14 @@ return [
         'path' => env('FFMPEG_PATH', 'ffmpeg'),
     ],
 
+    'tiktok' => [
+        'client_key'    => env('TIKTOK_CLIENT_KEY'),
+        'client_secret' => env('TIKTOK_CLIENT_SECRET'),
+        // Must match a Redirect URI registered on the TikTok app (HTTPS, e.g. an ngrok URL + /tiktok/callback)
+        'redirect_uri'  => env('TIKTOK_REDIRECT_URI'),
+        'scopes'        => env('TIKTOK_SCOPES', 'user.info.basic,video.upload'),
+    ],
+
     'music' => [
         // Royalty-free tracks, one folder per mood: <path>/<mood>/*.mp3
         'path' => env('MUSIC_LIBRARY_PATH', storage_path('app/music')),
