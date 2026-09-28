@@ -11,6 +11,7 @@ use App\Services\TranscriptService;
 use App\Services\YtDlpService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -33,6 +34,15 @@ class AnalyzeVideoJob implements ShouldQueue
     ];
 
     public function __construct(public string $projectId) {}
+
+    /**
+     * Never run the same project twice in parallel: a stale copy handed out
+     * again while the original is still working is dropped instead of restarting.
+     */
+    public function middleware(): array
+    {
+        return [(new WithoutOverlapping('analyze:' . $this->projectId))->expireAfter($this->timeout)->dontRelease()];
+    }
 
     public function handle(YtDlpService $ytdlp, TranscriptService $transcriptSvc, GeminiService $gemini): void
     {

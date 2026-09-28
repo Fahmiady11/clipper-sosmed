@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\EnsuresQueueWorker;
 use App\Helpers\YoutubeHelper;
 use App\Http\Requests\StoreClipRequest;
 use App\Jobs\ClipVideoJob;
@@ -15,6 +16,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ClipController extends Controller
 {
+    use EnsuresQueueWorker;
+
     public function store(StoreClipRequest $request): JsonResponse
     {
         $data = $request->validated();
@@ -196,32 +199,4 @@ class ClipController extends Controller
 
         return response($image, 200)->header('Content-Type', 'image/jpeg');
     }
-
-    private function ensureQueueWorkerRunning(): void
-    {
-        exec('pgrep -f "artisan queue:listen" 2>/dev/null', $pids);
-        if (!empty($pids)) {
-            return;
-        }
-
-        $artisan = base_path('artisan');
-        $php     = PHP_BINARY;
-        $log     = storage_path('logs/queue-worker.log');
-
-        exec("nohup $php $artisan queue:listen >> $log 2>&1 &");
-    }
-
-    // private function ensureQueueWorkerRunning(): void
-    // {
-    //     exec('pgrep -f "artisan queue:work" 2>/dev/null', $pids);
-    //     if (!empty($pids)) {
-    //         return;
-    //     }
-
-    //     $artisan = base_path('artisan');
-    //     $php     = PHP_BINARY;
-    //     $log     = storage_path('logs/queue-worker.log');
-
-    //     exec("nohup $php $artisan queue:work --stop-when-empty >> $log 2>&1 &");
-    // }
 }

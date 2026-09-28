@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\EnsuresQueueWorker;
 use App\Http\Requests\StoreProjectRequest;
 use App\Models\ClipProject;
 use App\Services\ProjectCreator;
@@ -11,6 +12,8 @@ use Illuminate\Support\Facades\Log;
 
 class ProjectController extends Controller
 {
+    use EnsuresQueueWorker;
+
     public function store(StoreProjectRequest $request, ProjectCreator $creator): JsonResponse
     {
         $data    = $request->validated();
@@ -91,29 +94,5 @@ class ProjectController extends Controller
             'error_msg'        => $project->error_msg,
             'clips'      => $clips,
         ]);
-    }
-
-    private function ensureQueueWorkerRunning(): void
-    {
-        // Match only OUR persistent worker (--timeout=600), not artisan serve's
-        // internal --once runners which have default 60s timeout and will kill
-        // long-running jobs like AnalyzeVideoJob (yt-dlp downloads take 2-15 min).
-        exec("pgrep -f 'queue:work.*--timeout=600' 2>/dev/null", $pids);
-        if (!empty($pids)) {
-            return;
-        }
-
-        $php     = PHP_BINARY;
-        $artisan = base_path('artisan');
-        $log     = storage_path('logs/queue-worker.log');
-
-        $cmd = "{$php} {$artisan} queue:work"
-             . ' --timeout=600'
-             . ' --memory=512'
-             . ' --sleep=1'
-             . ' --tries=1'
-             . " >> {$log} 2>&1";
-
-        exec("nohup {$cmd} &");
     }
 }

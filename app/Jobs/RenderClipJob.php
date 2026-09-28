@@ -7,6 +7,7 @@ use App\Services\FFmpegService;
 use App\Services\MusicService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Throwable;
@@ -16,9 +17,18 @@ class RenderClipJob implements ShouldQueue
     use Queueable;
 
     public int $tries   = 2;
-    public int $timeout = 600;
+    public int $timeout = 1800; // two libx264 "slow" passes on long clips can take >10 min
 
     public function __construct(public string $clipId) {}
+
+    /**
+     * Never run the same clip twice in parallel: a stale copy handed out
+     * again while the original is still working is dropped instead of restarting.
+     */
+    public function middleware(): array
+    {
+        return [(new WithoutOverlapping('render:' . $this->clipId))->expireAfter($this->timeout)->dontRelease()];
+    }
 
     public function handle(FFmpegService $ffmpeg, MusicService $music): void
     {

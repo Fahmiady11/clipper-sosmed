@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\EnsuresQueueWorker;
 use App\Jobs\RenderClipJob;
 use App\Models\GeneratedClip;
 use App\Services\GeminiService;
@@ -10,6 +11,8 @@ use Illuminate\Support\Facades\Auth;
 
 class RenderController extends Controller
 {
+    use EnsuresQueueWorker;
+
     public function render(string $clipId): JsonResponse
     {
         $clip = GeneratedClip::with('clipProject')->findOrFail($clipId);
@@ -79,16 +82,5 @@ class RenderController extends Controller
             'caption'  => $result['caption'],
             'hashtags' => $result['hashtags'],
         ]);
-    }
-
-    private function ensureQueueWorkerRunning(): void
-    {
-        exec('pgrep -f "artisan queue:listen" 2>/dev/null', $pids);
-        if (!empty($pids)) return;
-
-        $artisan = base_path('artisan');
-        $php     = PHP_BINARY;
-        $log     = storage_path('logs/queue-worker.log');
-        exec("nohup $php $artisan queue:listen >> $log 2>&1 &");
     }
 }

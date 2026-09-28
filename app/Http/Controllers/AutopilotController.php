@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\EnsuresQueueWorker;
 use App\Jobs\DiscoverVideosJob;
 use App\Jobs\UploadToTikTokJob;
 use App\Models\ClipProject;
@@ -16,6 +17,8 @@ use Illuminate\Support\Facades\Storage;
 
 class AutopilotController extends Controller
 {
+    use EnsuresQueueWorker;
+
     public function sources(): JsonResponse
     {
         $sources = VideoSource::where('user_id', Auth::id())
@@ -89,6 +92,7 @@ class AutopilotController extends Controller
         $source = $this->ownedSource($sourceId);
         $source->update(['last_run_at' => now()]);
         DiscoverVideosJob::dispatch($source->id);
+        $this->ensureQueueWorkerRunning();
 
         return response()->json(['success' => true]);
     }
@@ -139,6 +143,7 @@ class AutopilotController extends Controller
             'tiktok_error'      => null,
         ]);
         UploadToTikTokJob::dispatch($clip->id, $account->id);
+        $this->ensureQueueWorkerRunning();
 
         return response()->json(['success' => true]);
     }

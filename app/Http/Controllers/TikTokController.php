@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\EnsuresQueueWorker;
 use App\Jobs\UploadToTikTokJob;
 use App\Models\GeneratedClip;
 use App\Models\TiktokAccount;
@@ -16,6 +17,8 @@ use Throwable;
 
 class TikTokController extends Controller
 {
+    use EnsuresQueueWorker;
+
     public function __construct(private TikTokService $tiktok) {}
 
     public function connect(Request $request): RedirectResponse
@@ -116,6 +119,7 @@ class TikTokController extends Controller
             'disable_stitch'  => (bool) ($data['disable_stitch'] ?? false),
         ] : [];
         UploadToTikTokJob::dispatch($clip->id, $account->id, $mode, $postInfo);
+        $this->ensureQueueWorkerRunning();
 
         return $this->statusResponse($clip);
     }
