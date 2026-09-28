@@ -85,6 +85,13 @@ php artisan schedule:work               # menjalankan pengecekan sumber berkala
 
 Catatan biaya: setiap video = 1 panggilan Gemini + render N klip. Mulai dengan `maks 1 video/cek` dan interval longgar.
 
+## Stabilitas queue & disk (selesai)
+
+- **Job kembali ke awal terus-menerus**: penyebabnya `queue:listen` (dijalankan otomatis oleh RenderController/ClipController) yang mematikan job setelah 60 dtk (default `--timeout`), terlepas dari `$timeout` job. Job yang dimatikan tetap *reserved*, lalu diambil lagi setelah `retry_after` dan mulai dari awal.
+  Sekarang: satu trait `EnsuresQueueWorker` (hanya `queue:work --timeout=3600`, tidak menambah worker jika sudah ada), `retry_after` 3700 dtk (> timeout job terlama), `WithoutOverlapping` di AnalyzeVideoJob/RenderClipJob, timeout render 30 menit.
+  Jika ada worker `queue:listen` lama yang masih hidup: `pkill -f "artisan queue:listen"` sekali.
+- **Pembersihan disk** `php artisan clipper:cleanup` (terjadwal harian 03:17): hapus `storage/app/temp/<project>` yang tidak aktif dan `video_cache` yang tidak tersentuh lebih dari `CLIPPER_TEMP_RETENTION_HOURS` (default 72 jam). Klip hasil render tidak dihapus. Kalau klip lama dirender lagi, video sumber di-download ulang otomatis.
+
 ## Fase 4 — Autopilot & tracking
 
 - Auto-approve jika skor di atas threshold.

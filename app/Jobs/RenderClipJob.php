@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Models\GeneratedClip;
 use App\Services\FFmpegService;
 use App\Services\MusicService;
+use App\Services\YtDlpService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
@@ -30,7 +31,7 @@ class RenderClipJob implements ShouldQueue
         return [(new WithoutOverlapping('render:' . $this->clipId))->expireAfter($this->timeout)->dontRelease()];
     }
 
-    public function handle(FFmpegService $ffmpeg, MusicService $music): void
+    public function handle(FFmpegService $ffmpeg, MusicService $music, YtDlpService $ytdlp): void
     {
         $log  = Log::channel('clipper_jobs');
         $clip = GeneratedClip::with(['clipProject.subtitleSetting', 'clipProject.hookSetting', 'clipProject.transcript'])->findOrFail($this->clipId);
@@ -50,7 +51,10 @@ class RenderClipJob implements ShouldQueue
         $srcVideo = $tempDir . '/video.mp4';
 
         if (!file_exists($srcVideo)) {
-            throw new \RuntimeException("Source video not found: {$srcVideo}");
+            // Source removed by clipper:cleanup — fetch it again (served from video_cache when still there)
+            $log->info('Source video missing, re-downloading', ['project_id' => $project->id]);
+            @mkdir($tempDir, 0755, true);
+            $ytdlp->download($project->youtube_url, $srcVideo);
         }
 
         $step2 = $tempDir . '/layout_' . $this->clipId . '.mp4';

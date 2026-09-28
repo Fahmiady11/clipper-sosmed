@@ -57,6 +57,11 @@ return [
         'scopes'        => env('TIKTOK_SCOPES', 'user.info.basic,video.upload'),
     ],
 
+    'clipper' => [
+        // Downloaded source videos (temp/, video_cache/) older than this are deleted daily
+        'temp_retention_hours' => (int) env('CLIPPER_TEMP_RETENTION_HOURS', 72),
+    ],
+
     'music' => [
         // Royalty-free tracks, one folder per mood: <path>/<mood>/*.mp3
         'path' => env('MUSIC_LIBRARY_PATH', storage_path('app/music')),
